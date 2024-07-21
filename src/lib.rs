@@ -49,7 +49,7 @@ fn setup(mut commands: Commands, _asset_server: Res<AssetServer>) {
     commands.spawn(Camera2dBundle::default());
 }
 
-const RING_DEPTH: f32 = 30.0;
+const RING_DEPTH: f32 = 20.0;
 
 #[make_hot]
 fn draw(
@@ -62,7 +62,7 @@ fn draw(
     mut radius_offset: Local<f32>,
 ) {
     let autoaim = 0.04;
-    let game_speed = 2.0 + *player_ring as f32 * 0.01;
+    let game_speed = 0.02;
     painter.hollow = true;
     painter.thickness = 5.0;
     painter.cap = Cap::None;
@@ -78,7 +78,7 @@ fn draw(
         *player_ring = player_ring.saturating_sub(1);
     }
     //if keyboard_input.pressed(KeyCode::ArrowRight) {
-    *player_offset += 0.3 * time.delta_seconds() * game_speed;
+    *player_offset -= 10.0 * time.delta_seconds() * game_speed;
     //};
     //if keyboard_input.pressed(KeyCode::ArrowLeft) {
     //    *player_offset -= 0.005;
@@ -98,37 +98,19 @@ fn draw(
         };
     }
 
-    let local_player_pos = 6;
+    let local_player_pos = 40;
 
-    if false {
+    if true {
         // Dizzy mode
         let ring_speed_player =
             get_ring_speed(local_player_pos + *player_ring, 0, 0, local_player_pos);
-
         let game_ring = local_player_pos + *player_ring;
         let arc_size = get_arc_size(game_ring + 1024, 0, 0, local_player_pos);
         let p_player = t * (ring_speed_player * (local_player_pos + 1) as f32) + *player_offset;
         let t_player = (p_player + arc_size * 0.5) * TAU;
-        painter.set_color(Color::WHITE);
-        //painter.hollow = false;
-        painter.arc(
-            RING_DEPTH * ((local_player_pos + 1) as f32) - RING_DEPTH,
-            TAU * p_player,
-            TAU * (p_player + 0.1),
+        painter.set_translation(
+            vec3(-t_player.sin(), -t_player.cos(), 0.0) * local_player_pos as f32 * RING_DEPTH,
         );
-        painter.set_translation(vec3(
-            -t_player.sin()
-                * local_player_pos as f32
-                * RING_DEPTH
-                * (1.0 + local_player_pos as f32 / 80.0),
-            -t_player.cos()
-                * local_player_pos as f32
-                * RING_DEPTH
-                * (1.0 + local_player_pos as f32 / 80.0),
-            0.0,
-        ));
-        //painter.circle(10.0);
-        //painter.set_translation(Vec3::ZERO);
     }
 
     for i in 0..100u32 {
@@ -162,11 +144,10 @@ fn draw(
             ring_color_idx = *player_color_idx;
         }
         let p = (t * (ring_speed * (i + 1) as f32) + offset).rem_euclid(1.0);
-        let next_speed = get_ring_speed(game_ring + 1, 0, 0, i + 1);
 
         painter.set_color(idx_color(ring_color_idx));
         if i == local_player_pos && pressed_up {
-            //
+            let next_speed = get_ring_speed(game_ring + 1, 0, 0, i + 1);
             let mut this_p = p;
             let mut this_size = arc_size;
             let mut next_size = get_arc_size(game_ring + 1 + 1024, 0, 0, i + 1);
@@ -185,6 +166,8 @@ fn draw(
             } else {
                 missed = true;
             }
+            //*player_offset = 0.0;
+            //*player_ring = player_ring.saturating_add(1);
         }
 
         if missed {
@@ -217,17 +200,6 @@ fn draw(
                 TAU * p,
                 TAU * (p + arc_size - inset * 2.0),
             );
-            //painter.hollow = true;
-            //painter.thickness = RING_DEPTH;
-            //painter.cap = Cap::None;
-            //let inset = ring_size * 0.49;
-            //let p = p.fract() + inset;
-            //painter.set_color(Color::WHITE);
-            //painter.arc(
-            //    RING_DEPTH * ((i + 1) as f32),
-            //    TAU * p,
-            //    TAU * (p + ring_size - inset * 2.0),
-            //);
         }
     }
 }
@@ -249,7 +221,8 @@ fn get_arc_size(ring: u32, level: u32, attempt: u32, local_ring: u32) -> f32 {
 }
 
 fn get_ring_speed(ring: u32, level: u32, attempt: u32, local_ring: u32) -> f32 {
-    (hash_noise(ring, level, attempt) * 0.2 + 0.1) / ((local_ring + 1) as f32)
+    ((hash_noise(ring, level, attempt) * 0.2 + 0.1) / ((local_ring + 1) as f32))
+        * (1.0 + ring as f32 * 0.5)
 }
 
 fn get_ring_color(ring: u32, level: u32, attempt: u32) -> u32 {
