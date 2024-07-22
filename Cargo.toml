@@ -5,7 +5,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0 OR CC0-1.0"
 
 [dependencies]
-bevy = { version = "0.14", features = ["dynamic_linking"] }
+bevy = { version = "0.14", features = ["dynamic_linking", "file_watcher"] }
 ridiculous_bevy_hot_reloading = { git = "https://github.com/DGriffin91/ridiculous_bevy_hot_reloading" }
 bevy_vector_shapes = "0.8.0"
 

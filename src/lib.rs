@@ -3,9 +3,14 @@
 use std::f32::consts::*;
 
 use bevy::asset::AssetMetaCheck;
+use bevy::core_pipeline::fxaa::{Fxaa, Sensitivity};
+use bevy::core_pipeline::smaa::SmaaSettings;
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
-use bevy::math::vec3;
+use bevy::math::*;
 use bevy::prelude::*;
+use bevy::render::render_resource::{AsBindGroup, ShaderRef, ShaderType};
+use bevy::sprite::{Material2d, Material2dPlugin, MaterialMesh2dBundle};
+use bevy::window::PresentMode;
 use bevy::winit::{UpdateMode, WinitSettings};
 use bevy_vector_shapes::shapes::DiscPainter;
 use bevy_vector_shapes::Shape2dPlugin;
@@ -26,14 +31,25 @@ fn main() {
             focused_mode: UpdateMode::Continuous,
             unfocused_mode: UpdateMode::Continuous,
         })
-        .add_plugins(DefaultPlugins.set(AssetPlugin {
-            // Wasm builds will check for meta files (that don't exist) if this isn't set.
-            // This causes errors and even panics in web builds on itch.
-            // See https://github.com/bevyengine/bevy_github_ci_template/issues/48.
-            meta_check: AssetMetaCheck::Never,
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(AssetPlugin {
+                    // Wasm builds will check for meta files (that don't exist) if this isn't set.
+                    // This causes errors and even panics in web builds on itch.
+                    // See https://github.com/bevyengine/bevy_github_ci_template/issues/48.
+                    meta_check: AssetMetaCheck::Never,
+                    ..default()
+                })
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        present_mode: PresentMode::Immediate,
+                        ..default()
+                    }),
+                    ..default()
+                }),
+        )
         .add_plugins((
+            Material2dPlugin::<DataMaterial>::default(),
             LogDiagnosticsPlugin::default(),
             FrameTimeDiagnosticsPlugin,
             Shape2dPlugin::default(),
@@ -48,8 +64,25 @@ fn main() {
         .run();
 }
 
-fn setup(mut commands: Commands, _asset_server: Res<AssetServer>) {
-    commands.spawn(Camera2dBundle::default());
+fn setup(
+    mut commands: Commands,
+    _asset_server: Res<AssetServer>,
+    mut materials: ResMut<Assets<DataMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+) {
+    commands.spawn(Camera2dBundle::default()).insert(Fxaa {
+        enabled: true,
+        edge_threshold: Sensitivity::Ultra,
+        edge_threshold_min: Sensitivity::Ultra,
+    });
+
+    // quad
+    commands.spawn(MaterialMesh2dBundle {
+        mesh: meshes.add(Triangle2d::default()).into(),
+        transform: Transform::from_translation(vec3(0.0, 0.0, -100.0)),
+        material: materials.add(DataMaterial::default()),
+        ..default()
+    });
 }
 
 #[make_hot]
@@ -60,7 +93,20 @@ fn draw(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut player_offset: Local<f32>,
     mut player_color_idx: Local<u32>,
+    mut materials: ResMut<Assets<DataMaterial>>,
+    window: Query<(Entity, &mut Window)>,
 ) {
+    let (_, gpu) = materials.iter_mut().next().unwrap();
+    let (_, window) = window.iter().next().unwrap();
+
+    gpu.state.resolution = window
+        .physical_size()
+        .as_vec2()
+        .extend(window.width())
+        .extend(window.height());
+    gpu.state.scale_factor = window.scale_factor();
+    gpu.state.time = time.elapsed_seconds();
+
     let autoaim = 0.04;
     let game_speed = 0.02;
     painter.hollow = true;
@@ -92,23 +138,33 @@ fn draw(
 
     let local_player_pos = 10 + *player_ring;
 
-    let ring_depth = (25.0 - (*player_ring as f32) * 0.25).max(8.0);
+    let ring_thick = (25.0 - (*player_ring as f32) * 0.25).max(8.0);
+    gpu.state.ring_thick = ring_thick;
 
-    {
-        let t_player = *player_offset * TAU;
-        painter.set_translation(
-            vec3(-t_player.sin(), -t_player.cos(), 0.0) * local_player_pos as f32 * ring_depth,
-        );
-    }
+    //{
+    //    let t_player = *player_offset * TAU;
+    //    let position =
+    //        vec3(-t_player.sin(), -t_player.cos(), 0.0) * local_player_pos as f32 * ring_thick;
+    //    //dbg!(position);
+    //    gpu.state.position = vec4(position.x, -position.y, 0.0, 0.0);
+    //
+    //    painter.set_translation(position);
+    //}
 
-    for i in 0..115u32 + local_player_pos {
-        let color = if i % 2 == 0 {
-            RGB_PALETTE[1][1]
-        } else {
-            RGB_PALETTE[1][2]
-        };
-        painter.set_color(color);
-        arc(&mut painter, 0.0, 1.0, i, ring_depth);
+    //for i in 0..115u32 + local_player_pos {
+    //    let color = if i % 2 == 0 {
+    //        RGB_PALETTE[1][1]
+    //    } else {
+    //        RGB_PALETTE[1][2]
+    //    };
+    //    if i % 2 == 0 {
+    //        painter.set_color(color);
+    //        arc(&mut painter, 0.0, 1.0, i, ring_thick);
+    //    }
+    //}
+
+    if true {
+        return;
     }
 
     let mut missed = false;
@@ -157,7 +213,7 @@ fn draw(
             painter.circle(5000.0);
         }
 
-        arc(&mut painter, p, arc_size, i, ring_depth);
+        arc(&mut painter, p, arc_size, i, ring_thick);
 
         {
             // Edge Lines
@@ -168,7 +224,7 @@ fn draw(
                 let p = p.fract() + inset;
                 painter.set_color(Color::WHITE);
                 painter.arc(
-                    ring_depth * ((i + 1) as f32) - ring_depth,
+                    ring_thick * ((i + 1) as f32) - ring_thick,
                     TAU * p,
                     TAU * (p + arc_size - inset * 2.0),
                 );
@@ -180,7 +236,7 @@ fn draw(
                 let p = p.fract() + inset;
                 painter.set_color(Color::WHITE);
                 painter.arc(
-                    ring_depth * ((i + 1) as f32) - (ring_depth - 1.0) - ring_depth,
+                    ring_thick * ((i + 1) as f32) - (ring_thick - 1.0) - ring_thick,
                     TAU * p,
                     TAU * (p + arc_size - inset * 2.0),
                 );
@@ -189,13 +245,13 @@ fn draw(
     }
 }
 
-fn arc(painter: &mut ShapePainter, t: f32, size: f32, ring: u32, ring_depth: f32) {
+fn arc(painter: &mut ShapePainter, t: f32, size: f32, ring: u32, ring_thick: f32) {
     painter.hollow = true;
-    painter.thickness = ring_depth;
+    painter.thickness = ring_thick;
     painter.cap = Cap::None;
     let t = t.fract();
     painter.arc(
-        ring_depth * ((ring + 1) as f32) - ring_depth,
+        ring_thick * ((ring + 1) as f32) - ring_thick,
         TAU * t,
         TAU * (t + size),
     );
@@ -220,5 +276,30 @@ fn idx_color(i: u32) -> Color {
         1 => RGB_PALETTE[1][4],
         2 => RGB_PALETTE[2][4],
         _ => RGB_PALETTE[0][0],
+    }
+}
+
+#[derive(Clone, ShaderType, Default, Debug)]
+struct GpuState {
+    position: Vec4,
+    resolution: Vec4,
+    scale_factor: f32,
+    ring_thick: f32,
+    frame: f32,
+    time: f32,
+}
+
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone, Default)]
+struct DataMaterial {
+    #[uniform(0)]
+    state: GpuState,
+}
+
+impl Material2d for DataMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "material2d.wgsl".into()
+    }
+    fn vertex_shader() -> ShaderRef {
+        "material2d.wgsl".into()
     }
 }
