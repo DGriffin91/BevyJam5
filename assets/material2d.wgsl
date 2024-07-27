@@ -47,9 +47,13 @@ struct State {
     frame: f32,
     time: f32,
     local_player_pos: u32,
-    player_offset: f32,
     t: f32,
-    spare3: u32,
+    player_ring: u32,
+    player_offset: f32,
+    player_color_idx: u32,
+    step_anim: f32,
+    move_cooldown: u32,
+    spare2: u32,
 }
 
 @group(2) @binding(0) var<uniform> state: State;

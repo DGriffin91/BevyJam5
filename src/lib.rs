@@ -93,80 +93,49 @@ fn setup(
 fn draw(
     time: Res<Time>,
     painter: ShapePainter,
-    player_ring: Local<u32>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    player_offset: Local<f32>,
-    player_color_idx: Local<u32>,
     materials: ResMut<Assets<DataMaterial>>,
     window: Query<(Entity, &mut Window)>,
-    step_anim: Local<f32>,
 ) {
-    draw_fn(
-        time,
-        painter,
-        player_ring,
-        keyboard_input,
-        player_offset,
-        player_color_idx,
-        materials,
-        window,
-        step_anim,
-    );
+    draw_fn(time, painter, keyboard_input, materials, window);
 }
 
 #[cfg(not(feature = "hot_reload"))]
 fn draw(
     time: Res<Time>,
     painter: ShapePainter,
-    player_ring: Local<u32>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    player_offset: Local<f32>,
-    player_color_idx: Local<u32>,
     materials: ResMut<Assets<DataMaterial>>,
     window: Query<(Entity, &mut Window)>,
-    step_anim: Local<f32>,
 ) {
-    draw_fn(
-        time,
-        painter,
-        player_ring,
-        keyboard_input,
-        player_offset,
-        player_color_idx,
-        materials,
-        window,
-        step_anim,
-    );
+    draw_fn(time, painter, keyboard_input, materials, window);
 }
 
 fn draw_fn(
     time: Res<Time>,
     mut painter: ShapePainter,
-    mut player_ring: Local<u32>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut player_offset: Local<f32>,
-    mut player_color_idx: Local<u32>,
     mut materials: ResMut<Assets<DataMaterial>>,
     window: Query<(Entity, &mut Window)>,
-    mut step_anim: Local<f32>,
 ) {
     let (_, gpu) = materials.iter_mut().next().unwrap();
     let (_, window) = window.iter().next().unwrap();
+    let state = &mut gpu.state;
 
-    gpu.state.resolution = window
+    state.resolution = window
         .physical_size()
         .as_vec2()
         .extend(window.width())
         .extend(window.height());
-    gpu.state.scale_factor = window.scale_factor();
-    gpu.state.time = time.elapsed_seconds();
+    state.scale_factor = window.scale_factor();
+    state.time = time.elapsed_seconds();
 
     let game_speed = 0.09;
     painter.hollow = true;
     painter.thickness = 5.0;
     painter.cap = Cap::None;
     let t = time.elapsed_seconds() * game_speed;
-    gpu.state.t = t;
+    state.t = t;
     let mut pressed_up = false;
     //if *player_direction == 0.0 {
     //    *player_direction = 1.0;
@@ -176,7 +145,7 @@ fn draw_fn(
         //*player_direction *= -1.0;
     }
     if keyboard_input.just_pressed(KeyCode::ArrowDown) {
-        *player_ring = player_ring.saturating_sub(1);
+        state.player_ring = state.player_ring.saturating_sub(1);
     }
 
     for (i, k) in [
@@ -189,28 +158,28 @@ fn draw_fn(
     .enumerate()
     {
         if keyboard_input.just_pressed(*k) {
-            *player_color_idx = i as u32;
+            state.player_color_idx = i as u32;
         };
     }
 
-    let local_player_pos = 10 + *player_ring;
-    gpu.state.local_player_pos = local_player_pos;
+    let local_player_pos = 10 + state.player_ring;
+    state.local_player_pos = local_player_pos;
 
-    let ring_thick = (25.0 - (*player_ring as f32) * 0.25).max(7.0);
-    gpu.state.ring_thick = ring_thick;
+    let ring_thick = (25.0 - (state.player_ring as f32) * 0.25).max(7.0);
+    state.ring_thick = ring_thick;
 
     {
         let ring_speed = get_ring_speed(local_player_pos, 0, 0);
-        let ring_start = (t * (ring_speed * (local_player_pos + 1) as f32) + *player_offset)
+        let ring_start = (t * (ring_speed * (local_player_pos + 1) as f32) + state.player_offset)
             .rem_euclid(1.0)
             * TAU;
         let norm_pos = vec3(-ring_start.sin(), -ring_start.cos(), 0.0);
         let ring_center_offset = norm_pos * ring_thick * 0.5;
-        let step_anim_offset = norm_pos * ring_thick * -(1.0 - *step_anim);
+        let step_anim_offset = norm_pos * ring_thick * -(1.0 - state.step_anim);
         let position =
             norm_pos * local_player_pos as f32 * ring_thick - ring_center_offset + step_anim_offset;
 
-        gpu.state.position = vec4(position.x, -position.y, 0.0, 0.0);
+        state.position = vec4(position.x, -position.y, 0.0, 0.0);
 
         painter.set_translation(position);
     }
@@ -238,19 +207,20 @@ fn draw_fn(
 
         let ring_start = (t * (ring_speed * (ring + 1) as f32)).rem_euclid(1.0);
 
-        if ring == local_player_pos && pressed_up {
+        if ring == local_player_pos && pressed_up && state.move_cooldown == 1.0 {
             let next_speed = get_ring_speed(ring + 1, 0, 0);
-            let this_p = (ring_start + *player_offset).rem_euclid(1.0);
+            let this_p = (ring_start + state.player_offset).rem_euclid(1.0);
 
             let next_size = get_arc_size(ring + 1, 0, 0);
             let next_p = (t * (next_speed * (ring + 2) as f32)).rem_euclid(1.0);
 
             let within = (this_p - next_p).rem_euclid(1.0);
             if within < next_size {
-                *player_offset = within;
-                *player_ring = player_ring.saturating_add(1);
-                *step_anim = 0.0;
+                state.player_offset = within;
+                state.player_ring = state.player_ring.saturating_add(1);
+                state.step_anim = 0.0;
             } else {
+                state.move_cooldown = 0.0;
                 missed = true;
             }
         }
@@ -296,17 +266,25 @@ fn draw_fn(
             }
         }
         if ring == local_player_pos {
+            if state.move_cooldown < 1.0 {
+                let v = ((time.elapsed_seconds() * 20.0).sin() * 0.5 + 0.5) * 0.6 + 0.1;
+                painter.set_color(Color::srgba(1.0, 1.0, 1.0, v));
+            } else {
+                painter.set_color(Color::srgb(1.0, 1.0, 1.0));
+            }
             let temp = painter.transform;
             painter.hollow = false;
             painter.set_translation(Vec3::ZERO);
-            painter.set_color(Color::srgb(1.0, 1.0, 1.0));
             painter.circle((ring_thick * 0.5) * 0.8);
             painter.set_translation(temp.translation);
         }
     }
-    gpu.state.player_offset = *player_offset;
-    let step_anim_speed = 15.0;
-    *step_anim = (*step_anim + time.delta_seconds() * step_anim_speed).min(1.0);
+    state.player_offset = state.player_offset;
+    let step_anim_speed = 20.0;
+    state.step_anim = (state.step_anim + time.delta_seconds() * step_anim_speed).min(1.0);
+    let cooldown_anim_speed = 1.0;
+    state.move_cooldown =
+        (state.move_cooldown + time.delta_seconds() * cooldown_anim_speed).min(1.0);
 }
 
 fn arc(painter: &mut ShapePainter, start: f32, size: f32, ring: u32, ring_thick: f32) {
@@ -341,9 +319,13 @@ struct GpuState {
     frame: f32,
     time: f32,
     local_player_pos: u32,
-    player_offset: f32,
     t: f32,
-    spare3: u32,
+    player_ring: u32,
+    player_offset: f32,
+    player_color_idx: u32,
+    step_anim: f32,
+    move_cooldown: f32,
+    spare2: u32,
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone, Default)]
