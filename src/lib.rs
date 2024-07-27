@@ -99,6 +99,7 @@ fn draw(
     player_color_idx: Local<u32>,
     materials: ResMut<Assets<DataMaterial>>,
     window: Query<(Entity, &mut Window)>,
+    step_anim: Local<f32>,
 ) {
     draw_fn(
         time,
@@ -109,6 +110,7 @@ fn draw(
         player_color_idx,
         materials,
         window,
+        step_anim,
     );
 }
 
@@ -122,6 +124,7 @@ fn draw(
     player_color_idx: Local<u32>,
     materials: ResMut<Assets<DataMaterial>>,
     window: Query<(Entity, &mut Window)>,
+    step_anim: Local<f32>,
 ) {
     draw_fn(
         time,
@@ -132,6 +135,7 @@ fn draw(
         player_color_idx,
         materials,
         window,
+        step_anim,
     );
 }
 
@@ -144,6 +148,7 @@ fn draw_fn(
     mut player_color_idx: Local<u32>,
     mut materials: ResMut<Assets<DataMaterial>>,
     window: Query<(Entity, &mut Window)>,
+    mut step_anim: Local<f32>,
 ) {
     let (_, gpu) = materials.iter_mut().next().unwrap();
     let (_, window) = window.iter().next().unwrap();
@@ -200,8 +205,10 @@ fn draw_fn(
             .rem_euclid(1.0)
             * TAU;
         let norm_pos = vec3(-ring_start.sin(), -ring_start.cos(), 0.0);
+        let ring_center_offset = norm_pos * ring_thick * 0.5;
+        let step_anim_offset = norm_pos * ring_thick * -(1.0 - *step_anim);
         let position =
-            norm_pos * local_player_pos as f32 * ring_thick - norm_pos * ring_thick * 0.5;
+            norm_pos * local_player_pos as f32 * ring_thick - ring_center_offset + step_anim_offset;
 
         gpu.state.position = vec4(position.x, -position.y, 0.0, 0.0);
 
@@ -242,6 +249,7 @@ fn draw_fn(
             if within < next_size {
                 *player_offset = within;
                 *player_ring = player_ring.saturating_add(1);
+                *step_anim = 0.0;
             } else {
                 missed = true;
             }
@@ -297,6 +305,8 @@ fn draw_fn(
         }
     }
     gpu.state.player_offset = *player_offset;
+    let step_anim_speed = 15.0;
+    *step_anim = (*step_anim + time.delta_seconds() * step_anim_speed).min(1.0);
 }
 
 fn arc(painter: &mut ShapePainter, start: f32, size: f32, ring: u32, ring_thick: f32) {
