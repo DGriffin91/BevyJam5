@@ -18,11 +18,17 @@ use bevy_vector_shapes::{painter::ShapePainter, shapes::Cap};
 pub mod palette;
 pub mod sampling;
 
+#[cfg(feature = "hot_reload")]
 use ridiculous_bevy_hot_reloading::{hot_reloading_macros::make_hot, HotReloadPlugin};
-use sampling::hash_noise;
 
+use sampling::hash_noise;
+#[cfg(feature = "hot_reload")]
 #[no_mangle] // Needed so libloading can find this entry point
 fn main() {
+    app();
+}
+
+pub fn app() {
     App::new()
         .insert_resource(ClearColor(Color::srgb(0.05, 0.05, 0.05)))
         .insert_resource(WinitSettings {
@@ -38,7 +44,7 @@ fn main() {
                 })
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        present_mode: PresentMode::Immediate,
+                        present_mode: PresentMode::AutoVsync,
                         ..default()
                     }),
                     ..default()
@@ -49,6 +55,7 @@ fn main() {
             LogDiagnosticsPlugin::default(),
             FrameTimeDiagnosticsPlugin,
             Shape2dPlugin::default(),
+            #[cfg(feature = "hot_reload")]
             HotReloadPlugin {
                 auto_watch: true,
                 bevy_dylib: true,
@@ -81,8 +88,54 @@ fn setup(
     });
 }
 
+#[cfg(feature = "hot_reload")]
 #[make_hot]
 fn draw(
+    time: Res<Time>,
+    painter: ShapePainter,
+    player_ring: Local<u32>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    player_offset: Local<f32>,
+    player_color_idx: Local<u32>,
+    materials: ResMut<Assets<DataMaterial>>,
+    window: Query<(Entity, &mut Window)>,
+) {
+    draw_fn(
+        time,
+        painter,
+        player_ring,
+        keyboard_input,
+        player_offset,
+        player_color_idx,
+        materials,
+        window,
+    );
+}
+
+#[cfg(not(feature = "hot_reload"))]
+fn draw(
+    time: Res<Time>,
+    painter: ShapePainter,
+    player_ring: Local<u32>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    player_offset: Local<f32>,
+    player_color_idx: Local<u32>,
+    materials: ResMut<Assets<DataMaterial>>,
+    window: Query<(Entity, &mut Window)>,
+) {
+    draw_fn(
+        time,
+        painter,
+        player_ring,
+        keyboard_input,
+        player_offset,
+        player_color_idx,
+        materials,
+        window,
+    );
+}
+
+fn draw_fn(
     time: Res<Time>,
     mut painter: ShapePainter,
     mut player_ring: Local<u32>,
