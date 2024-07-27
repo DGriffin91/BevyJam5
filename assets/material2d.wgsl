@@ -25,12 +25,14 @@ fn hash_noise(x: u32, y: u32, z: u32) -> f32 {
 }
 
 fn get_arc_size(ring: u32, level: u32, seed: u32) -> f32 {
-    return (select(0.9,0.3,ring % 2==0)) / (f32(ring + 1));
+    return (hash_noise(ring, level, seed) * 1.0 + 0.8) / ((f32(ring + 1)) * 0.5);
 }
 
 fn get_ring_speed(ring: u32, level: u32, seed: u32) -> f32 {
-    return ((hash_noise(ring, level, seed) * 0.2 + 0.1) / (f32(ring + 1)))
-        * (1.0 + f32(ring) * 0.4);
+    return 
+          ((hash_noise(ring, level, seed) * 1.0 + 0.8) / (f32(ring + 1)))
+        * (1.0 + f32(ring) * 0.0)
+        * select(1.0,-1.0,ring % 2 == 0);
 }
 
 fn get_ring_color(ring: u32, level: u32, seed: u32) -> u32 {
@@ -92,16 +94,11 @@ fn render(coord: vec2<f32>) -> vec3<f32> {
         // Draw arcs
         let ring_speed = get_ring_speed(ring, 0u, 0u);
         var arc_size: f32;
-        if ring == state.local_player_pos {
-            arc_size = 0.13 / (1.0 + f32(ring) * 0.03);
-        } else {
-            arc_size = get_arc_size(ring, 0u, 0u);
-        }
+        arc_size = get_arc_size(ring, 0u, 0u);
+        
 
-        var ring_start = state.player_offset;
-        if ring != state.local_player_pos {
-            ring_start = fract(state.t * (ring_speed * f32(ring + 1)));
-        }
+        let ring_start = fract(state.t * (ring_speed * f32(ring + 1)));
+        
 
         let start = fract(theta - ring_start);
         if start < arc_size {

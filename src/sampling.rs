@@ -1,5 +1,3 @@
-use bevy::math::UVec2;
-
 #[inline(always)]
 pub fn uhash(a: u32, b: u32) -> u32 {
     let mut x = (a.overflowing_mul(1597334673).0) ^ (b.overflowing_mul(3812015801).0);
