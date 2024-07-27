@@ -25,7 +25,7 @@ fn hash_noise(x: u32, y: u32, z: u32) -> f32 {
 }
 
 fn get_arc_size(ring: u32, level: u32, seed: u32) -> f32 {
-    return (hash_noise(ring, level, seed) * 1.0 + 0.8) / ((f32(ring + 1)) * 0.5);
+    return (hash_noise(ring, level, seed) * 1.0 + 0.5) / ((f32(ring + 1)) * 0.5);
 }
 
 fn get_ring_speed(ring: u32, level: u32, seed: u32) -> f32 {
@@ -86,10 +86,10 @@ fn render(coord: vec2<f32>) -> vec3<f32> {
         // Draw rings
         let m = ring % 2;
         if m == 0 {
-            color = vec3(0.2,0.6,0.2);
+            color = vec3(0.02, 0.02, 0.05);
         }
         if m == 1 {
-            color = vec3(0.1,0.1,0.5);
+            color = vec3(0.1,0.12,0.1);
         }
     }
 
@@ -107,6 +107,12 @@ fn render(coord: vec2<f32>) -> vec3<f32> {
         let start = fract(theta - ring_start);
         if start < arc_size {
             color = vec3(0.1, 0.02, 0.2);
+            if ring == state.local_player_pos + 1 {
+                color = vec3(0.9, 0.3, 0.0);
+            }
+            else if ring == state.local_player_pos {
+                color = vec3(0.3, 0.05, 0.0);
+            }
         }
     }
 

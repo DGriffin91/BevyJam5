@@ -236,35 +236,6 @@ fn draw_fn(
             arc(&mut painter, ring_start, arc_size, ring, ring_thick);
         }
 
-        {
-            // Edge Lines
-            if ring == local_player_pos {
-                painter.hollow = true;
-                painter.thickness = 0.5;
-                painter.cap = Cap::None;
-                let inset = 0.0;
-                let p = ring_start.fract() + inset;
-                painter.set_color(Color::WHITE);
-                painter.arc(
-                    ring_thick * ((ring + 1) as f32) - ring_thick,
-                    TAU * p,
-                    TAU * (p + arc_size - inset * 2.0),
-                );
-            }
-            if ring == local_player_pos + 1 {
-                painter.hollow = true;
-                painter.thickness = 0.5;
-                painter.cap = Cap::None;
-                let inset = 0.0;
-                let p = ring_start.fract() + inset;
-                painter.set_color(Color::WHITE);
-                painter.arc(
-                    ring_thick * ((ring + 1) as f32) - (ring_thick - 1.0) - ring_thick,
-                    TAU * p,
-                    TAU * (p + arc_size - inset * 2.0),
-                );
-            }
-        }
         if ring == local_player_pos {
             if state.move_cooldown < 1.0 {
                 let v = ((time.elapsed_seconds() * 20.0).sin() * 0.5 + 0.5) * 0.6 + 0.1;
@@ -301,7 +272,7 @@ fn arc(painter: &mut ShapePainter, start: f32, size: f32, ring: u32, ring_thick:
 }
 
 fn get_arc_size(ring: u32, level: u32, seed: u32) -> f32 {
-    (hash_noise(ring, level, seed) * 1.0 + 0.8) / (((ring + 1) as f32) * 0.5)
+    (hash_noise(ring, level, seed) * 1.0 + 0.5) / (((ring + 1) as f32) * 0.5)
 }
 
 fn get_ring_speed(ring: u32, level: u32, seed: u32) -> f32 {
