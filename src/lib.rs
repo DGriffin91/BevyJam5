@@ -44,7 +44,10 @@ pub fn app() {
                 })
                 .set(WindowPlugin {
                     primary_window: Some(Window {
+                        title: String::from("BevyJam5"),
                         present_mode: PresentMode::AutoVsync,
+                        resolution: (1280., 768.).into(),
+                        fit_canvas_to_parent: true,
                         ..default()
                     }),
                     ..default()
@@ -66,7 +69,7 @@ pub fn app() {
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, draw)
-        //.add_systems(Update, update_cursor)
+        .add_systems(Update, update_cursor)
         .run();
 }
 
@@ -186,7 +189,7 @@ fn draw_fn(
     state.scale_factor = window.scale_factor();
     state.time += time.delta_seconds();
     if state.paused == 0 {
-        if state.t * 5.0 > (state.player_ring + 1) as f32 {
+        if state.t * 7.0 > (state.player_ring + 1) as f32 {
             state.t += time.delta_seconds() * game_speed * 0.3;
 
             state.player_dead = 1;
@@ -370,7 +373,7 @@ fn draw_fn(
 }
 
 fn get_max_arcs(ring: u32) -> u32 {
-    1 + ((ring - 16) / 4).clamp(0, 5)
+    ((ring as i32 - 16).max(0) as u32 / 4).clamp(2, 6)
 }
 
 fn arc(painter: &mut ShapePainter, start: f32, size: f32, ring: u32, ring_thick: f32) {
@@ -387,7 +390,7 @@ fn arc(painter: &mut ShapePainter, start: f32, size: f32, ring: u32, ring_thick:
 }
 
 fn get_arc_size(ring: u32, level: u32, seed: u32) -> f32 {
-    (hash_noise(ring, level, seed) * 0.4 + 0.2) / (((ring + 1) as f32) * 0.2)
+    (hash_noise(ring, level, seed) * 0.2 + 0.2) / (((ring + 1) as f32) * 0.13 + 2.0)
 }
 
 fn get_ring_speed(ring: u32, level: u32, seed: u32) -> f32 {

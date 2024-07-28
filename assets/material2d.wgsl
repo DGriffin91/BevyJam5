@@ -4,6 +4,14 @@
 const TAU: f32 = 6.28318530717958647692528676655900577;
 const PI: f32 = 3.14159265358979323846264338327950288;
 
+fn rem_euclid(a: f32, b: f32) -> f32 {
+    let r = a % b;
+    return select(r + b, r, r >= 0.0);
+}
+
+fn pfract(a: f32) -> f32 {
+    return rem_euclid(a, 1.0);
+}
 
 // ---------------------------------------
 // ---------------------------------------
@@ -94,7 +102,7 @@ fn hash_noise(x: u32, y: u32, z: u32) -> f32 {
 // ---------------------------------------
 
 fn get_arc_size(ring: u32, level: u32, seed: u32) -> f32 {
-    return (hash_noise(ring, level, seed) * 0.4 + 0.2) / ((f32(ring + 1)) * 0.2);
+    return (hash_noise(ring, level, seed) * 0.2 + 0.2) / ((f32(ring + 1)) * 0.13 + 2.0);
 }
 
 fn get_ring_speed(ring: u32, level: u32, seed: u32) -> f32 {
@@ -109,7 +117,7 @@ fn get_ring_color(ring: u32, level: u32, seed: u32) -> u32 {
 }
 
 fn get_max_arcs(ring: u32) -> u32 {
-    return 1u + clamp((ring - 16u) / 4u, 0u, 5u);
+    return clamp(u32(max(i32(ring) - 16, 0)) / 4u, 2u, 6u);
 }
 
 struct State {
@@ -163,7 +171,7 @@ fn render(coord: vec2<f32>) -> vec3<f32> {
     let ffring = floor(fring);
     let ring = u32(ffring);
 
-    if fring < state.t * 5.0 {
+    if fring < state.t * 7.0 {
         return vec3(1.0, 0.0, 0.0);
     }
 
@@ -189,8 +197,8 @@ fn render(coord: vec2<f32>) -> vec3<f32> {
         for (var sub_ring = 0u; sub_ring <  get_max_arcs(ring); sub_ring += 1u) {
             let ring_speed = get_ring_speed(ring, sub_ring, 0u);
             let arc_size = get_arc_size(ring, sub_ring, 0u);
-            let ring_start = fract(state.t * (ring_speed * f32(ring + 1)));
-            let start = fract(theta - ring_start);
+            let ring_start = pfract(state.t * (ring_speed * f32(ring + 1)));
+            let start = pfract(theta - ring_start);
             if start < arc_size {
                 let v = (1.0 - pow(abs(f32(state.player_ring + 1) - f32(ffring)), 0.2) * 0.6);
                 color = vec3(0.4 * v, 0.0, 0.3 * v + 0.03);
