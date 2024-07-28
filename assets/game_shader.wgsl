@@ -21,7 +21,6 @@ fn pfract(x: f32) -> f32 {
 // ---------------------------------------
 // ---------------------------------------
 
-
 fn HUEtoRGB(hue: f32) -> vec3<f32> {
     // Hue [0..1] to RGB [0..1]
     let rgb = abs(hue * 6.0 - vec3<f32>(3.0, 2.0, 4.0)) * vec3<f32>(1.0, -1.0, -1.0) + vec3<f32>(-1.0, 2.0, 2.0);
@@ -184,7 +183,6 @@ fn render(coord: vec2<f32>) -> vec3<f32> {
         }
     }
 
-    
     {
         // Draw arcs
         for (var sub_ring = 0u; sub_ring <  get_max_arcs(ring); sub_ring += 1u) {
@@ -207,7 +205,8 @@ fn render(coord: vec2<f32>) -> vec3<f32> {
     color = HSVtoRGB(color);
 
     let dist_from_center = distance(coord.xy, screen_mid);
-    if state.player_dead == 0 && u32(dist_from_center) < u32(state.ring_thick) >> 1 {
+    let current_frag_is_near_player = u32(dist_from_center) < u32(state.ring_thick) >> 1;
+    if state.player_dead == 0 && current_frag_is_near_player {
         // Draw player
         let cooldown_anim = (sin(state.t * 200.0) * 0.7 + 0.5) * 0.6 + 0.1;
         var player_alpha = select(1.0, cooldown_anim, state.move_cooldown < 1.0);
