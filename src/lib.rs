@@ -121,6 +121,9 @@ fn draw_fn(
     let (_, gpu) = materials.iter_mut().next().unwrap();
     let (_, window) = window.iter().next().unwrap();
     let state = &mut gpu.state;
+    if state.player_ring == 0 {
+        state.player_ring = 10;
+    }
 
     state.resolution = window
         .physical_size()
@@ -130,12 +133,11 @@ fn draw_fn(
     state.scale_factor = window.scale_factor();
     state.time = time.elapsed_seconds();
 
-    let game_speed = 0.09;
+    let game_speed = 0.08;
     painter.hollow = true;
     painter.thickness = 5.0;
     painter.cap = Cap::None;
-    let t = time.elapsed_seconds() * game_speed;
-    state.t = t;
+    state.t = time.elapsed_seconds() * game_speed;
     let mut pressed_up = false;
     //if *player_direction == 0.0 {
     //    *player_direction = 1.0;
@@ -162,22 +164,20 @@ fn draw_fn(
         };
     }
 
-    let local_player_pos = 10 + state.player_ring;
-    state.local_player_pos = local_player_pos;
-
     let ring_thick = (25.0 - (state.player_ring as f32) * 0.25).max(7.0);
     state.ring_thick = ring_thick;
 
     {
-        let ring_speed = get_ring_speed(local_player_pos, 0, 0);
-        let ring_start = (t * (ring_speed * (local_player_pos + 1) as f32) + state.player_offset)
+        let ring_speed = get_ring_speed(state.player_ring, state.player_sub_ring, 0);
+        let ring_start = (state.t * (ring_speed * (state.player_ring + 1) as f32)
+            + state.player_offset)
             .rem_euclid(1.0)
             * TAU;
         let norm_pos = vec3(-ring_start.sin(), -ring_start.cos(), 0.0);
         let ring_center_offset = norm_pos * ring_thick * 0.5;
         let step_anim_offset = norm_pos * ring_thick * -(1.0 - state.step_anim);
-        let position =
-            norm_pos * local_player_pos as f32 * ring_thick - ring_center_offset + step_anim_offset;
+        let position = norm_pos * state.player_ring as f32 * ring_thick - ring_center_offset
+            + step_anim_offset;
 
         state.position = vec4(position.x, -position.y, 0.0, 0.0);
 
@@ -187,7 +187,7 @@ fn draw_fn(
     let draw_debug_arc = false;
 
     if draw_debug_rings {
-        for i in 0..115u32 + local_player_pos {
+        for i in 0..115u32 + state.player_ring {
             if i % 2 == 0 {
                 painter.set_color(Color::srgb(0.0, 1.0, 1.0));
                 arc(&mut painter, 0.0, 1.0, i, ring_thick);
@@ -196,66 +196,86 @@ fn draw_fn(
     }
 
     let mut missed = false;
-    let start = local_player_pos;
-    let mut end = local_player_pos + 2;
+    let start = state.player_ring;
+    let mut end = state.player_ring + 2;
     if draw_debug_arc {
-        end = local_player_pos + 60; // Only eval further out rings if draw debug
+        end = state.player_ring + 60; // Only eval further out rings if draw debug
     }
+
     for ring in start..end {
-        let ring_speed = get_ring_speed(ring, 0, 0);
-        let arc_size = get_arc_size(ring, 0, 0);
+        let max_arcs = get_max_arcs(ring);
+        for sub_ring in 0..max_arcs {
+            let ring_speed = get_ring_speed(ring, sub_ring, 0);
+            let arc_size = get_arc_size(ring, sub_ring, 0);
+            let ring_start = (state.t * (ring_speed * (ring + 1) as f32)).rem_euclid(1.0);
 
-        let ring_start = (t * (ring_speed * (ring + 1) as f32)).rem_euclid(1.0);
+            if draw_debug_arc {
+                painter.set_color(Color::srgb(1.0, 0.0, 1.0));
+                arc(&mut painter, ring_start, arc_size, ring, ring_thick);
+            }
+        }
+    }
 
-        if ring == local_player_pos && pressed_up && state.move_cooldown == 1.0 {
-            let next_speed = get_ring_speed(ring + 1, 0, 0);
+    if pressed_up && state.move_cooldown == 1.0 {
+        let mut missed_all = true;
+        let max_arcs = get_max_arcs(state.player_ring);
+        for sub_ring in 0..max_arcs {
+            let ring = state.player_ring;
+            let ring_speed = get_ring_speed(ring, state.player_sub_ring, 0);
+            let ring_start = (state.t * (ring_speed * (ring + 1) as f32)).rem_euclid(1.0);
             let this_p = (ring_start + state.player_offset).rem_euclid(1.0);
 
-            let next_size = get_arc_size(ring + 1, 0, 0);
-            let next_p = (t * (next_speed * (ring + 2) as f32)).rem_euclid(1.0);
+            let next_speed = get_ring_speed(ring + 1, sub_ring, 0);
+            let next_size = get_arc_size(ring + 1, sub_ring, 0);
+            let next_p = (state.t * (next_speed * (ring + 2) as f32)).rem_euclid(1.0);
 
             let within = (this_p - next_p).rem_euclid(1.0);
             if within < next_size {
                 state.player_offset = within;
                 state.player_ring = state.player_ring.saturating_add(1);
                 state.step_anim = 0.0;
-            } else {
-                state.move_cooldown = 0.0;
-                missed = true;
+                state.player_sub_ring = sub_ring;
+                missed_all = false;
+                break;
             }
         }
-
-        if missed {
-            painter.hollow = false;
-            painter.set_color(Color::srgb(1.0, 0.0, 0.0));
-            painter.circle(5000.0);
-        }
-
-        if draw_debug_arc {
-            painter.set_color(Color::srgb(1.0, 0.0, 1.0));
-            arc(&mut painter, ring_start, arc_size, ring, ring_thick);
-        }
-
-        if ring == local_player_pos {
-            if state.move_cooldown < 1.0 {
-                let v = ((time.elapsed_seconds() * 20.0).sin() * 0.5 + 0.5) * 0.6 + 0.1;
-                painter.set_color(Color::srgba(1.0, 1.0, 1.0, v));
-            } else {
-                painter.set_color(Color::srgb(1.0, 1.0, 1.0));
-            }
-            let temp = painter.transform;
-            painter.hollow = false;
-            painter.set_translation(Vec3::ZERO);
-            painter.circle((ring_thick * 0.5) * 0.8);
-            painter.set_translation(temp.translation);
+        if missed_all {
+            //state.move_cooldown = 0.0;
+            missed = true;
         }
     }
+
+    if missed {
+        painter.hollow = false;
+        painter.set_color(Color::srgb(1.0, 0.0, 0.0));
+        painter.circle(5000.0);
+    }
+
+    {
+        // Draw player
+        if state.move_cooldown < 1.0 {
+            let v = ((time.elapsed_seconds() * 20.0).sin() * 0.5 + 0.5) * 0.6 + 0.1;
+            painter.set_color(Color::srgba(1.0, 1.0, 1.0, v));
+        } else {
+            painter.set_color(Color::srgb(1.0, 1.0, 1.0));
+        }
+        let temp = painter.transform;
+        painter.hollow = false;
+        painter.set_translation(Vec3::ZERO);
+        painter.circle((ring_thick * 0.5) * 0.8);
+        painter.set_translation(temp.translation);
+    }
+
     state.player_offset = state.player_offset;
     let step_anim_speed = 20.0;
     state.step_anim = (state.step_anim + time.delta_seconds() * step_anim_speed).min(1.0);
     let cooldown_anim_speed = 1.0;
     state.move_cooldown =
         (state.move_cooldown + time.delta_seconds() * cooldown_anim_speed).min(1.0);
+}
+
+fn get_max_arcs(ring: u32) -> u32 {
+    1 + ((ring - 16) / 4).clamp(0, 5)
 }
 
 fn arc(painter: &mut ShapePainter, start: f32, size: f32, ring: u32, ring_thick: f32) {
@@ -272,7 +292,7 @@ fn arc(painter: &mut ShapePainter, start: f32, size: f32, ring: u32, ring_thick:
 }
 
 fn get_arc_size(ring: u32, level: u32, seed: u32) -> f32 {
-    (hash_noise(ring, level, seed) * 1.0 + 0.5) / (((ring + 1) as f32) * 0.5)
+    (hash_noise(ring, level, seed) * 0.4 + 0.2) / (((ring + 1) as f32) * 0.2)
 }
 
 fn get_ring_speed(ring: u32, level: u32, seed: u32) -> f32 {
@@ -289,14 +309,14 @@ struct GpuState {
     ring_thick: f32,
     frame: f32,
     time: f32,
-    local_player_pos: u32,
     t: f32,
     player_ring: u32,
     player_offset: f32,
     player_color_idx: u32,
     step_anim: f32,
     move_cooldown: f32,
-    spare2: u32,
+    player_sub_ring: u32,
+    spare1: u32,
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone, Default)]

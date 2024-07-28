@@ -25,7 +25,7 @@ fn hash_noise(x: u32, y: u32, z: u32) -> f32 {
 }
 
 fn get_arc_size(ring: u32, level: u32, seed: u32) -> f32 {
-    return (hash_noise(ring, level, seed) * 1.0 + 0.5) / ((f32(ring + 1)) * 0.5);
+    return (hash_noise(ring, level, seed) * 0.4 + 0.2) / ((f32(ring + 1)) * 0.2);
 }
 
 fn get_ring_speed(ring: u32, level: u32, seed: u32) -> f32 {
@@ -39,6 +39,10 @@ fn get_ring_color(ring: u32, level: u32, seed: u32) -> u32 {
     return u32(floor(hash_noise(ring + 2048, level, seed) * 1.0 - 0.0000001));
 }
 
+fn get_max_arcs(ring: u32) -> u32 {
+    return 1u + clamp((ring - 16u) / 4u, 0u, 5u);
+}
+
 struct State {
     position: vec4<f32>,
     resolution: vec4<f32>,
@@ -46,14 +50,14 @@ struct State {
     ring_thick: f32,
     frame: f32,
     time: f32,
-    local_player_pos: u32,
     t: f32,
     player_ring: u32,
     player_offset: f32,
     player_color_idx: u32,
     step_anim: f32,
     move_cooldown: u32,
-    spare2: u32,
+    player_sub_ring: u32,
+    spare1: u32,
 }
 
 @group(2) @binding(0) var<uniform> state: State;
@@ -79,39 +83,46 @@ fn render(coord: vec2<f32>) -> vec3<f32> {
     let screen_mid = state.resolution.xy / 2.0;
     let p = coord - screen_mid - pos * state.scale_factor;
     let fring = length(p) / (state.ring_thick * state.scale_factor) + 1.0;
-    let ring = u32(floor(fring));
+    let ffring = floor(fring);
+    let ring = u32(ffring);
+
+    if fring < state.t * 3.0 {
+        return vec3(1.0, 0.0, 0.0);
+    }
+
     let theta = (atan2(p.y, p.x) + PI * 0.5) / TAU;
 
     {
         // Draw rings
         let m = ring % 2;
         if m == 0 {
-            color = vec3(0.02, 0.02, 0.05);
+            color = mix(vec3(0.03, 0.001, 0.0), vec3(0.01, 0.0, 0.01), sin(state.t * 40.0 + ffring * 0.2));
         }
         if m == 1 {
-            color = vec3(0.1,0.12,0.1);
+            //color = mix(vec3(0.02, 0.05, 0.05), vec3(0.0, 0.0, 0.05), cos(state.t * 20.0 + ffring * 0.2));
+            let v = sin(state.t * 40.) * 0.5 + 0.5;
+            let v2 = cos(state.t * 40.) * 0.5 + 0.5;
+            color = vec3(0.05 * v, 0.0, 0.01 * v2);
         }
     }
 
-
+    
     {
         // Draw arcs
-        let ring_speed = get_ring_speed(ring, 0u, 0u);
-        var arc_size: f32;
-        arc_size = get_arc_size(ring, 0u, 0u);
-        
-
-        let ring_start = fract(state.t * (ring_speed * f32(ring + 1)));
-        
-
-        let start = fract(theta - ring_start);
-        if start < arc_size {
-            color = vec3(0.1, 0.02, 0.2);
-            if ring == state.local_player_pos + 1 {
-                color = vec3(0.9, 0.3, 0.0);
-            }
-            else if ring == state.local_player_pos {
-                color = vec3(0.3, 0.05, 0.0);
+        for (var sub_ring = 0u; sub_ring <  get_max_arcs(ring); sub_ring += 1u) {
+            let ring_speed = get_ring_speed(ring, sub_ring, 0u);
+            let arc_size = get_arc_size(ring, sub_ring, 0u);
+            let ring_start = fract(state.t * (ring_speed * f32(ring + 1)));
+            let start = fract(theta - ring_start);
+            if start < arc_size {
+                let v = (1.0 - pow(abs(f32(state.player_ring + 1) - f32(ffring)), 0.2) * 0.6);
+                color = vec3(0.4 * v, 0.0, 0.3 * v + 0.03);
+                if ring == state.player_ring + 1 {
+                    color = vec3(1.0, 0.3, 0.0);
+                }
+                //else if ring == state.player_ring {
+                //    color = vec3(0.1, 0.1, 0.1);
+                //}
             }
         }
     }
