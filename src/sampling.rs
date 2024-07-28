@@ -17,8 +17,7 @@ pub fn unormf(n: u32) -> f32 {
 
 #[inline(always)]
 pub fn hash_noise(x: u32, y: u32, z: u32) -> f32 {
-    let urnd = uhash(x, (y << 11) + z);
-    unormf(urnd)
+    unormf(uhash(x, (y << 11) + z))
 }
 
 // like .rem_euclid(1.0)

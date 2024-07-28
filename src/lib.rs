@@ -318,7 +318,6 @@ fn draw(
     }
 
     state.step_anim = (state.step_anim + time.delta_seconds() * STEP_ANIM_SPEED).min(1.0);
-
     state.move_cooldown =
         (state.move_cooldown + time.delta_seconds() * COOLDOWN_ANIM_SPEED).min(1.0);
 }
