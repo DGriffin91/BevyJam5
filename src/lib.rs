@@ -54,7 +54,7 @@ pub fn app() {
             Material2dPlugin::<DataMaterial>::default(),
             LogDiagnosticsPlugin::default(),
             FrameTimeDiagnosticsPlugin,
-            bevy_framepace::debug::DiagnosticsPlugin,
+            //bevy_framepace::debug::DiagnosticsPlugin,
             Shape2dPlugin::default(),
             #[cfg(feature = "hot_reload")]
             HotReloadPlugin {
@@ -80,6 +80,9 @@ pub fn update_cursor(windows: Query<&Window>, mut gizmos: Gizmos) {
     }
 }
 
+#[derive(Component)]
+struct GameText;
+
 fn setup(
     mut commands: Commands,
     _asset_server: Res<AssetServer>,
@@ -99,6 +102,39 @@ fn setup(
         material: materials.add(DataMaterial::default()),
         ..default()
     });
+
+    let style = TextStyle {
+        font_size: 40.0,
+        color: Color::WHITE,
+        ..default()
+    };
+
+    commands
+        .spawn(NodeBundle {
+            style: Style {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            ..default()
+        })
+        .with_children(|parent| {
+            parent.spawn((
+                TextBundle::from_sections(vec![
+                    TextSection {
+                        value: String::from(""),
+                        style: style.clone(),
+                    },
+                    TextSection {
+                        value: String::from(""),
+                        style: style.clone(),
+                    },
+                ]),
+                GameText,
+            ));
+        });
 }
 
 #[cfg(feature = "hot_reload")]
@@ -109,8 +145,9 @@ fn draw(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     materials: ResMut<Assets<DataMaterial>>,
     window: Query<(Entity, &mut Window)>,
+    text: Query<&mut Text, With<GameText>>,
 ) {
-    draw_fn(time, painter, keyboard_input, materials, window);
+    draw_fn(time, painter, keyboard_input, materials, window, text);
 }
 
 #[cfg(not(feature = "hot_reload"))]
@@ -120,8 +157,9 @@ fn draw(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     materials: ResMut<Assets<DataMaterial>>,
     window: Query<(Entity, &mut Window)>,
+    text: Query<&mut Text, With<GameText>>,
 ) {
-    draw_fn(time, painter, keyboard_input, materials, window);
+    draw_fn(time, painter, keyboard_input, materials, window, text);
 }
 
 fn draw_fn(
@@ -130,12 +168,17 @@ fn draw_fn(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut materials: ResMut<Assets<DataMaterial>>,
     window: Query<(Entity, &mut Window)>,
+    mut text: Query<&mut Text, With<GameText>>,
 ) {
     let (_, gpu) = materials.iter_mut().next().unwrap();
     let (_, window) = window.iter().next().unwrap();
+    let mut text = text.single_mut();
+    let game_speed = 0.08;
+    let starting_level = 10;
+
     let state = &mut gpu.state;
     if state.player_ring == 0 {
-        state.player_ring = 10;
+        state.player_ring = starting_level;
     }
 
     state.resolution = window
@@ -144,18 +187,48 @@ fn draw_fn(
         .extend(window.width())
         .extend(window.height());
     state.scale_factor = window.scale_factor();
-    state.time = time.elapsed_seconds();
 
-    let game_speed = 0.08;
+    state.time += time.delta_seconds();
+    if state.t * 5.0 > (state.player_ring + 1) as f32 {
+        state.t += time.delta_seconds() * game_speed * 0.3;
+
+        state.player_dead = 1;
+    } else {
+        state.t += time.delta_seconds() * game_speed;
+    }
+
+    if state.player_dead != 0 {
+        if keyboard_input.just_pressed(KeyCode::Enter) {
+            text.sections[0].value = String::new();
+            text.sections[1].value = String::new();
+            *state = Default::default();
+            return;
+        }
+        text.sections[0].value = format!(
+            "LEVEL        {:>9}\nMISSED JUMPS {:>9}",
+            state.player_miss,
+            state.player_ring as i32 - starting_level as i32
+        );
+        text.sections[1].value = format!("\n\nPRESS ENTER TO RESTART");
+        text.sections[1].style.color = Color::srgba(
+            1.0,
+            1.0,
+            1.0,
+            ((state.time * 5.0).sin() * 0.5 + 0.5) * 0.85 + 0.15,
+        );
+    }
+
     painter.hollow = true;
     painter.thickness = 5.0;
     painter.cap = Cap::None;
-    state.t = time.elapsed_seconds() * game_speed;
     let mut pressed_up = false;
     //if *player_direction == 0.0 {
     //    *player_direction = 1.0;
     //}
-    if keyboard_input.just_pressed(KeyCode::ArrowUp) || keyboard_input.just_pressed(KeyCode::KeyW) {
+    if keyboard_input.just_pressed(KeyCode::ArrowUp)
+        || keyboard_input.just_pressed(KeyCode::KeyW)
+        || keyboard_input.just_pressed(KeyCode::Space)
+    {
         pressed_up = true;
         //*player_direction *= -1.0;
     }
@@ -253,13 +326,14 @@ fn draw_fn(
         }
         if missed_all {
             state.move_cooldown = 0.0;
+            state.player_miss += 1;
         }
     }
 
-    {
+    if state.player_dead == 0 {
         // Draw player
         if state.move_cooldown < 1.0 {
-            let v = ((time.elapsed_seconds() * 20.0).sin() * 0.7 + 0.5) * 0.6 + 0.1;
+            let v = ((state.t * 200.0).sin() * 0.7 + 0.5) * 0.6 + 0.1;
             painter.set_color(Color::srgba(1.0, 1.0, 1.0, v));
         } else {
             painter.set_color(Color::srgb(1.0, 1.0, 1.0));
@@ -310,18 +384,26 @@ fn get_ring_speed(ring: u32, level: u32, seed: u32) -> f32 {
 struct GpuState {
     position: Vec4,
     resolution: Vec4,
+
     scale_factor: f32,
     ring_thick: f32,
     frame: f32,
     time: f32,
+
     t: f32,
     player_ring: u32,
     player_offset: f32,
     player_color_idx: u32,
+
     step_anim: f32,
     move_cooldown: f32,
     player_sub_ring: u32,
+    player_dead: u32,
+
+    player_miss: u32,
+    spare0: u32,
     spare1: u32,
+    spare2: u32,
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone, Default)]

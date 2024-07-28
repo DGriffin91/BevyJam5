@@ -115,18 +115,26 @@ fn get_max_arcs(ring: u32) -> u32 {
 struct State {
     position: vec4<f32>,
     resolution: vec4<f32>,
+
     scale_factor: f32,
     ring_thick: f32,
     frame: f32,
     time: f32,
+
     t: f32,
     player_ring: u32,
     player_offset: f32,
     player_color_idx: u32,
+
     step_anim: f32,
-    move_cooldown: u32,
+    move_cooldown: f32,
     player_sub_ring: u32,
+    player_dead: u32,
+
+    player_miss: u32,
+    spare0: u32,
     spare1: u32,
+    spare2: u32,
 }
 
 @group(2) @binding(0) var<uniform> state: State;
