@@ -12,12 +12,19 @@ use bevy::render::render_resource::{AsBindGroup, ShaderRef, ShaderType};
 use bevy::sprite::{Material2d, Material2dPlugin, MaterialMesh2dBundle};
 use bevy::window::PresentMode;
 use bevy::winit::{UpdateMode, WinitSettings};
+use bevy_asset_loader::asset_collection::AssetCollection;
+use bevy_asset_loader::loading_state::config::ConfigureLoadingState;
+use bevy_asset_loader::loading_state::{LoadingState, LoadingStateAppExt};
+use bevy_kira_audio::prelude::AudioSource;
+use bevy_kira_audio::AudioPlugin;
+use bevy_kira_audio::{Audio, AudioControl};
 use bevy_vector_shapes::shapes::DiscPainter;
 use bevy_vector_shapes::Shape2dPlugin;
 use bevy_vector_shapes::{painter::ShapePainter, shapes::Cap};
-pub mod palette;
+
 pub mod sampling;
 
+use iyes_progress::{ProgressCounter, ProgressPlugin};
 #[cfg(feature = "hot_reload")]
 use ridiculous_bevy_hot_reloading::{hot_reloading_macros::make_hot, HotReloadPlugin};
 
@@ -28,8 +35,16 @@ fn main() {
     app();
 }
 
+#[derive(Clone, Eq, PartialEq, Debug, Hash, Default, States)]
+enum GameLoading {
+    #[default]
+    AssetLoading,
+    Loaded,
+}
+
 pub fn app() {
     App::new()
+        .insert_resource(Msaa::Off)
         .insert_resource(ClearColor(Color::srgb(0.05, 0.05, 0.05)))
         .insert_resource(WinitSettings {
             focused_mode: UpdateMode::Continuous,
@@ -53,10 +68,18 @@ pub fn app() {
                     ..default()
                 }),
         )
+        .init_state::<GameLoading>()
+        .add_plugins(ProgressPlugin::new(GameLoading::AssetLoading))
+        .add_loading_state(
+            LoadingState::new(GameLoading::AssetLoading)
+                .continue_to_state(GameLoading::Loaded)
+                .load_collection::<AudioAssets>(),
+        )
         .add_plugins((
             Material2dPlugin::<DataMaterial>::default(),
             LogDiagnosticsPlugin::default(),
             FrameTimeDiagnosticsPlugin,
+            AudioPlugin,
             //bevy_framepace::debug::DiagnosticsPlugin, // Crashes
             Shape2dPlugin::default(),
             #[cfg(feature = "hot_reload")]
@@ -68,12 +91,54 @@ pub fn app() {
             bevy_framepace::FramepacePlugin,
         ))
         .add_systems(Startup, setup)
-        .add_systems(Update, draw)
-        .add_systems(Update, update_cursor)
+        .add_systems(OnEnter(GameLoading::Loaded), start_music)
+        .add_systems(Update, draw.run_if(in_state(GameLoading::Loaded)))
+        .add_systems(
+            Update,
+            loading_ui.run_if(in_state(GameLoading::AssetLoading)),
+        )
+        //.add_systems(Update, update_cursor)
         .run();
 }
 
+fn loading_ui(
+    progress: Option<Res<ProgressCounter>>,
+    mut last_done: Local<u32>,
+    mut text: Query<&mut Text, With<GameText>>,
+) {
+    let mut text = text.single_mut();
+    if let Some(progress) = progress.map(|counter| counter.progress()) {
+        if progress.done > *last_done {
+            *last_done = progress.done;
+        }
+        text.sections[0].value = "LOADING ".to_string();
+        text.sections[1].value = format!("{}/{}", *last_done, progress.total);
+    }
+}
+
+fn start_music(asset_server: Res<AssetServer>, audio: Res<Audio>) {
+    audio
+        .play(asset_server.load("audio/theme1.flac"))
+        .looped()
+        .with_volume(0.5);
+}
+
+#[derive(AssetCollection, Resource)]
+pub struct AudioAssets {
+    #[asset(path = "audio/enemyexplode1.flac")]
+    pub enemyexplode1: Handle<AudioSource>,
+    #[asset(path = "audio/enemygun1.flac")]
+    pub enemygun1: Handle<AudioSource>,
+    #[asset(path = "audio/playergun1.flac")]
+    pub playergun1: Handle<AudioSource>,
+    #[asset(path = "audio/playerhit1.flac")]
+    pub playerhit1: Handle<AudioSource>,
+    #[asset(path = "audio/theme1.flac")]
+    pub theme1: Handle<AudioSource>,
+}
+
 pub fn update_cursor(windows: Query<&Window>, mut gizmos: Gizmos) {
+    // Latency test
     if let Some(pos) = windows.single().cursor_position() {
         let pos = Vec2::new(
             pos.x - windows.single().width() / 2.0,
@@ -137,6 +202,7 @@ fn setup(
         });
 }
 
+// This mess is here to workaround using hot reloading with a quick way to still use wasm
 #[cfg(feature = "hot_reload")]
 #[make_hot]
 fn draw(
@@ -146,8 +212,19 @@ fn draw(
     materials: ResMut<Assets<DataMaterial>>,
     window: Query<(Entity, &mut Window)>,
     text: Query<&mut Text, With<GameText>>,
+    audio: Res<bevy_kira_audio::Audio>,
+    audio_assets: Option<AudioAssets>,
 ) {
-    draw_fn(time, painter, keyboard_input, materials, window, text);
+    draw_fn(
+        time,
+        painter,
+        keyboard_input,
+        materials,
+        window,
+        text,
+        audio,
+        audio_assets,
+    );
 }
 
 #[cfg(not(feature = "hot_reload"))]
@@ -158,8 +235,19 @@ fn draw(
     materials: ResMut<Assets<DataMaterial>>,
     window: Query<(Entity, &mut Window)>,
     text: Query<&mut Text, With<GameText>>,
+    audio: Res<bevy_kira_audio::Audio>,
+    audio_assets: Res<AudioAssets>,
 ) {
-    draw_fn(time, painter, keyboard_input, materials, window, text);
+    draw_fn(
+        time,
+        painter,
+        keyboard_input,
+        materials,
+        window,
+        text,
+        audio,
+        audio_assets,
+    );
 }
 
 fn draw_fn(
@@ -169,10 +257,13 @@ fn draw_fn(
     mut materials: ResMut<Assets<DataMaterial>>,
     window: Query<(Entity, &mut Window)>,
     mut text: Query<&mut Text, With<GameText>>,
+    audio: Res<bevy_kira_audio::Audio>,
+    audio_assets: Res<AudioAssets>,
 ) {
     let (_, gpu) = materials.iter_mut().next().unwrap();
     let (_, window) = window.iter().next().unwrap();
     let mut text = text.single_mut();
+
     let game_speed = 0.08;
     let starting_level = 10;
 
@@ -211,7 +302,7 @@ fn draw_fn(
             state.player_miss,
             state.player_ring as i32 - starting_level as i32
         );
-        text.sections[1].value = format!("\n\nPRESS ENTER TO RESTART");
+        text.sections[1].value = "\n\nPRESS ENTER TO RESTART".to_string();
         text.sections[1].style.color = Color::srgba(
             1.0,
             1.0,
@@ -219,7 +310,7 @@ fn draw_fn(
             ((state.time * 5.0).sin() * 0.5 + 0.5) * 0.85 + 0.15,
         );
         if state.paused != 0 {
-            text.sections[2].value = format!("\n\nPRESS P OR TAB TO RESUME");
+            text.sections[2].value = "\n\nPRESS P OR TAB TO RESUME".to_string();
             text.sections[2].style.color = Color::srgba(
                 1.0,
                 1.0,
@@ -346,6 +437,9 @@ fn draw_fn(
         if missed_all {
             state.move_cooldown = 0.0;
             state.player_miss += 1;
+            audio.play(audio_assets.playerhit1.clone());
+        } else {
+            audio.play(audio_assets.playergun1.clone());
         }
     }
 
@@ -364,7 +458,6 @@ fn draw_fn(
         painter.set_translation(temp.translation);
     }
 
-    state.player_offset = state.player_offset;
     let step_anim_speed = 16.0;
     state.step_anim = (state.step_anim + time.delta_seconds() * step_anim_speed).min(1.0);
     let cooldown_anim_speed = 1.0;
