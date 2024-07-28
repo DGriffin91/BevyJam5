@@ -243,8 +243,8 @@ fn draw(
         }
         text.sections[0].value = format!(
             "LEVEL        {:>9}\nMISSED JUMPS {:>9}",
-            state.player_miss,
-            state.player_ring as i32 - STARTING_LEVEL as i32
+            state.player_ring as i32 - STARTING_LEVEL as i32,
+            state.player_miss
         );
         text.sections[1].value = "\n\nPRESS ENTER TO RESTART".to_string();
         text.sections[1].style.color =
@@ -256,9 +256,10 @@ fn draw(
         }
     }
 
-    let pressed_up = keyboard_input.just_pressed(KeyCode::ArrowUp)
+    let pressed_up = (keyboard_input.just_pressed(KeyCode::ArrowUp)
         || keyboard_input.just_pressed(KeyCode::KeyW)
-        || keyboard_input.just_pressed(KeyCode::Space);
+        || keyboard_input.just_pressed(KeyCode::Space))
+        && state.paused == 0;
 
     if keyboard_input.just_pressed(KeyCode::KeyP)
         || keyboard_input.just_pressed(KeyCode::Escape)
