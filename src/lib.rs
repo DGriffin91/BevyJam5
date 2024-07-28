@@ -164,7 +164,7 @@ fn draw_fn(
         };
     }
 
-    let ring_thick = (25.0 - (state.player_ring as f32) * 0.25).max(7.0);
+    let ring_thick = (25.0 - (state.player_ring as f32) * 0.2).max(6.0);
     state.ring_thick = ring_thick;
 
     {
@@ -195,7 +195,6 @@ fn draw_fn(
         }
     }
 
-    let mut missed = false;
     let start = state.player_ring;
     let mut end = state.player_ring + 2;
     if draw_debug_arc {
@@ -240,21 +239,14 @@ fn draw_fn(
             }
         }
         if missed_all {
-            //state.move_cooldown = 0.0;
-            missed = true;
+            state.move_cooldown = 0.0;
         }
-    }
-
-    if missed {
-        painter.hollow = false;
-        painter.set_color(Color::srgb(1.0, 0.0, 0.0));
-        painter.circle(5000.0);
     }
 
     {
         // Draw player
         if state.move_cooldown < 1.0 {
-            let v = ((time.elapsed_seconds() * 20.0).sin() * 0.5 + 0.5) * 0.6 + 0.1;
+            let v = ((time.elapsed_seconds() * 20.0).sin() * 0.7 + 0.5) * 0.6 + 0.1;
             painter.set_color(Color::srgba(1.0, 1.0, 1.0, v));
         } else {
             painter.set_color(Color::srgb(1.0, 1.0, 1.0));
@@ -267,7 +259,7 @@ fn draw_fn(
     }
 
     state.player_offset = state.player_offset;
-    let step_anim_speed = 20.0;
+    let step_anim_speed = 16.0;
     state.step_anim = (state.step_anim + time.delta_seconds() * step_anim_speed).min(1.0);
     let cooldown_anim_speed = 1.0;
     state.move_cooldown =

@@ -4,6 +4,71 @@
 const TAU: f32 = 6.28318530717958647692528676655900577;
 const PI: f32 = 3.14159265358979323846264338327950288;
 
+
+// ---------------------------------------
+// ---------------------------------------
+// ---------------------------------------
+
+
+fn HUEtoRGB(hue: f32) -> vec3<f32> {
+    // Hue [0..1] to RGB [0..1]
+    // See http://www.chilliant.com/rgb2hsv.html
+    let rgb = abs(hue * 6.0 - vec3<f32>(3.0, 2.0, 4.0)) * vec3<f32>(1.0, -1.0, -1.0) + vec3<f32>(-1.0, 2.0, 2.0);
+    return clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+fn RGBtoHCV(rgb: vec3<f32>) -> vec3<f32> {
+    // RGB [0..1] to Hue-Chroma-Value [0..1]
+    // Based on work by Sam Hocevar and Emil Persson
+    var p: vec4<f32>;
+    if rgb.y < rgb.z { 
+        p = vec4<f32>(rgb.z, rgb.y, -1.0, 2.0 / 3.0);
+    } else { 
+        p = vec4<f32>(rgb.y, rgb.z, 0.0, -1.0 / 3.0);
+    }
+    var q: vec4<f32>;
+    if rgb.x < p.x { 
+        q = vec4<f32>(p.x, p.y, p.z, rgb.x);
+    } else { 
+        q = vec4<f32>(rgb.x, p.y, p.z, p.x);
+    }
+    let c = q.x - min(q.w, q.y);
+    let h = abs((q.w - q.y) / (6.0 * c + 0.00001) + q.z); // EPSILON replaced with 0.00001
+    return vec3<f32>(h, c, q.x);
+}
+
+fn HSVtoRGB(hsv: vec3<f32>) -> vec3<f32> {
+    // Hue-Saturation-Value [0..1] to RGB [0..1]
+    let rgb = HUEtoRGB(hsv.x);
+    return ((rgb - 1.0) * hsv.y + 1.0) * hsv.z;
+}
+
+fn HSLtoRGB(hsl: vec3<f32>) -> vec3<f32> {
+    // Hue-Saturation-Lightness [0..1] to RGB [0..1]
+    let rgb = HUEtoRGB(hsl.x);
+    let c = (1.0 - abs(2.0 * hsl.z - 1.0)) * hsl.y;
+    return (rgb - 0.5) * c + hsl.z;
+}
+
+fn RGBtoHSV(rgb: vec3<f32>) -> vec3<f32> {
+    // RGB [0..1] to Hue-Saturation-Value [0..1]
+    let hcv = RGBtoHCV(rgb);
+    let s = hcv.y / (hcv.z + 0.00001); // EPSILON replaced with 0.00001
+    return vec3<f32>(hcv.x, s, hcv.z);
+}
+
+fn RGBtoHSL(rgb: vec3<f32>) -> vec3<f32> {
+    // RGB [0..1] to Hue-Saturation-Lightness [0..1]
+    let hcv = RGBtoHCV(rgb);
+    let z = hcv.z - hcv.y * 0.5;
+    let s = hcv.y / (1.0 - abs(z * 2.0 - 1.0) + 0.00001); // EPSILON replaced with 0.00001
+    return vec3<f32>(hcv.x, s, z);
+}
+
+// ---------------------------------------
+// ---------------------------------------
+// ---------------------------------------
+
 fn uhash(a: u32, b: u32) -> u32 { 
     var x = ((a * 1597334673u) ^ (b * 3812015801u));
     // from https://nullprogram.com/blog/2018/07/31/
@@ -23,6 +88,10 @@ fn hash_noise(x: u32, y: u32, z: u32) -> f32 {
     let urnd = uhash(x, (y << 11) + z);
     return unormf(urnd);
 }
+
+// ---------------------------------------
+// ---------------------------------------
+// ---------------------------------------
 
 fn get_arc_size(ring: u32, level: u32, seed: u32) -> f32 {
     return (hash_noise(ring, level, seed) * 0.4 + 0.2) / ((f32(ring + 1)) * 0.2);
@@ -86,7 +155,7 @@ fn render(coord: vec2<f32>) -> vec3<f32> {
     let ffring = floor(fring);
     let ring = u32(ffring);
 
-    if fring < state.t * 3.0 {
+    if fring < state.t * 5.0 {
         return vec3(1.0, 0.0, 0.0);
     }
 
@@ -126,6 +195,10 @@ fn render(coord: vec2<f32>) -> vec3<f32> {
             }
         }
     }
+
+    color = RGBtoHSV(color);
+    color.x = fract(color.x + (max(state.t - 10.0, 0.0) * 0.05));
+    color = HSVtoRGB(color);
 
     return color;
 }
