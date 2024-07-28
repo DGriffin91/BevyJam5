@@ -199,51 +199,8 @@ fn setup(
         });
 }
 
-// This mess is here to workaround using hot reloading with a quick way to still use wasm
-#[cfg(feature = "hot_reload")]
-#[make_hot]
+#[cfg_attr(feature = "hot_reload", make_hot)]
 fn draw(
-    time: Res<Time>,
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    materials: ResMut<Assets<DataMaterial>>,
-    window: Query<(Entity, &mut Window)>,
-    text: Query<&mut Text, With<GameText>>,
-    audio: Res<bevy_kira_audio::Audio>,
-    audio_assets: Res<AudioAssets>,
-) {
-    draw_fn(
-        time,
-        keyboard_input,
-        materials,
-        window,
-        text,
-        audio,
-        audio_assets,
-    );
-}
-
-#[cfg(not(feature = "hot_reload"))]
-fn draw(
-    time: Res<Time>,
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    materials: ResMut<Assets<DataMaterial>>,
-    window: Query<(Entity, &mut Window)>,
-    text: Query<&mut Text, With<GameText>>,
-    audio: Res<bevy_kira_audio::Audio>,
-    audio_assets: Res<AudioAssets>,
-) {
-    draw_fn(
-        time,
-        keyboard_input,
-        materials,
-        window,
-        text,
-        audio,
-        audio_assets,
-    );
-}
-
-fn draw_fn(
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut materials: ResMut<Assets<DataMaterial>>,
