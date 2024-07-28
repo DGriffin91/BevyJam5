@@ -22,7 +22,7 @@ pub mod sampling;
 use iyes_progress::{ProgressCounter, ProgressPlugin};
 #[cfg(feature = "hot_reload")]
 use ridiculous_bevy_hot_reloading::{hot_reloading_macros::make_hot, HotReloadPlugin};
-use sampling::hash_noise;
+use sampling::{hash_noise, pfract};
 
 const GAME_SPEED: f32 = 0.08;
 const STARTING_LEVEL: u32 = 10;
@@ -95,8 +95,16 @@ pub fn app() {
             Update,
             loading_ui.run_if(in_state(GameLoading::AssetLoading)),
         )
-        //.add_systems(Update, update_cursor)
+        //.add_systems(Update, update_cursor_latency_test)
         .run();
+}
+
+pub fn update_cursor_latency_test(windows: Query<&Window>, mut gizmos: Gizmos) {
+    let window: &Window = windows.single();
+    if let Some(pos) = window.cursor_position() {
+        let pos = Vec2::new(pos.x - window.width() / 2.0, window.height() / 2.0 - pos.y);
+        gizmos.circle_2d(pos, 10.0, Color::WHITE);
+    }
 }
 
 fn loading_ui(
@@ -135,17 +143,6 @@ pub struct AudioAssets {
     pub theme1: Handle<AudioSource>,
 }
 
-pub fn update_cursor(windows: Query<&Window>, mut gizmos: Gizmos) {
-    // Latency test
-    if let Some(pos) = windows.single().cursor_position() {
-        let pos = Vec2::new(
-            pos.x - windows.single().width() / 2.0,
-            windows.single().height() / 2.0 - pos.y,
-        );
-        gizmos.circle_2d(pos, 10.0, bevy::color::palettes::basic::GREEN);
-    }
-}
-
 #[derive(Component)]
 struct GameText;
 
@@ -155,6 +152,8 @@ fn setup(
     mut materials: ResMut<Assets<DataMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
+    // FXAA is a bit silly here but with everything moving so much it doesn't really matter.
+    // This allows for simpler math in the game shader while avoiding multi sampling in the shader for every fragment.
     commands.spawn(Camera2dBundle::default()).insert(Fxaa {
         enabled: true,
         edge_threshold: Sensitivity::Ultra,
@@ -272,7 +271,6 @@ fn draw_fn(
     if state.paused == 0 {
         if state.t * 7.0 > (state.player_ring + 1) as f32 {
             state.t += time.delta_seconds() * GAME_SPEED * 0.3;
-
             state.player_dead = 1;
         } else {
             state.t += time.delta_seconds() * GAME_SPEED;
@@ -293,20 +291,12 @@ fn draw_fn(
             state.player_ring as i32 - STARTING_LEVEL as i32
         );
         text.sections[1].value = "\n\nPRESS ENTER TO RESTART".to_string();
-        text.sections[1].style.color = Color::srgba(
-            1.0,
-            1.0,
-            1.0,
-            ((state.time * 5.0).sin() * 0.5 + 0.5) * 0.85 + 0.15,
-        );
+        text.sections[1].style.color =
+            Color::WHITE.with_alpha(((state.time * 5.0).sin() * 0.5 + 0.5) * 0.85 + 0.15);
         if state.paused != 0 {
             text.sections[2].value = "\n\nPRESS P OR TAB TO RESUME".to_string();
-            text.sections[2].style.color = Color::srgba(
-                1.0,
-                1.0,
-                1.0,
-                ((state.time * 5.0).cos() * 0.5 + 0.5) * 0.85 + 0.15,
-            );
+            text.sections[2].style.color =
+                Color::WHITE.with_alpha(((state.time * 5.0).cos() * 0.5 + 0.5) * 0.85 + 0.15);
         }
     }
 
@@ -330,10 +320,9 @@ fn draw_fn(
 
     {
         let ring_speed = get_ring_speed(state.player_ring, state.player_sub_ring, 0);
-        let ring_start = (state.t * (ring_speed * (state.player_ring + 1) as f32)
-            + state.player_offset)
-            .rem_euclid(1.0)
-            * TAU;
+        let ring_start =
+            pfract(state.t * (ring_speed * (state.player_ring + 1) as f32) + state.player_offset)
+                * TAU;
         let norm_pos = vec3(-ring_start.sin(), -ring_start.cos(), 0.0);
         let ring_center_offset = norm_pos * ring_thick * 0.5;
         let step_anim_offset = norm_pos * ring_thick * -(1.0 - state.step_anim);
@@ -349,17 +338,17 @@ fn draw_fn(
         for sub_ring in 0..max_arcs {
             let ring = state.player_ring;
             let ring_speed = get_ring_speed(ring, state.player_sub_ring, 0);
-            let ring_start = (state.t * (ring_speed * (ring + 1) as f32)).rem_euclid(1.0);
-            let this_p = (ring_start + state.player_offset).rem_euclid(1.0);
+            let ring_start = pfract(state.t * (ring_speed * (ring + 1) as f32));
+            let this_p = pfract(ring_start + state.player_offset);
 
             let next_speed = get_ring_speed(ring + 1, sub_ring, 0);
             let next_size = get_arc_size(ring + 1, sub_ring, 0);
-            let next_p = (state.t * (next_speed * (ring + 2) as f32)).rem_euclid(1.0);
+            let next_p = pfract(state.t * (next_speed * (ring + 2) as f32));
 
-            let within = (this_p - next_p).rem_euclid(1.0);
+            let within = pfract(this_p - next_p);
             if within < next_size {
                 state.player_offset = within;
-                state.player_ring = state.player_ring.saturating_add(1);
+                state.player_ring += 1;
                 state.step_anim = 0.0;
                 state.player_sub_ring = sub_ring;
                 missed_all = false;
@@ -429,9 +418,9 @@ struct DataMaterial {
 
 impl Material2d for DataMaterial {
     fn fragment_shader() -> ShaderRef {
-        "material2d.wgsl".into()
+        "game_shader.wgsl".into()
     }
     fn vertex_shader() -> ShaderRef {
-        "material2d.wgsl".into()
+        "game_shader.wgsl".into()
     }
 }
