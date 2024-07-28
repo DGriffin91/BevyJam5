@@ -55,6 +55,7 @@ hot_reload = [
     "dep:ridiculous_bevy_hot_reloading",
 ]
 
+
 [profile.dev]
 opt-level = 3
 

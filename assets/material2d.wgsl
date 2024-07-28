@@ -1,16 +1,20 @@
 
 #import "shaders/custom_material_import.wgsl"::COLOR_MULTIPLIER
 
-const TAU: f32 = 6.28318530717958647692528676655900577;
-const PI: f32 = 3.14159265358979323846264338327950288;
+const PI: f32 = 3.141592653589793;
+const TAU: f32 = 6.283185307179586;
+const FRAC_1_PI: f32 = 0.3183098861837907;
+const FRAC_1_TAU: f32 = 0.15915494309;
+const EPSILON: f32 = 0.00001;
 
 fn rem_euclid(a: f32, b: f32) -> f32 {
     let r = a % b;
     return select(r + b, r, r >= 0.0);
 }
 
-fn pfract(a: f32) -> f32 {
-    return rem_euclid(a, 1.0);
+fn pfract(x: f32) -> f32 {
+    let y = fract(x);
+    return select(y, y + 1.0, y < 0.0);
 }
 
 // ---------------------------------------
@@ -20,28 +24,16 @@ fn pfract(a: f32) -> f32 {
 
 fn HUEtoRGB(hue: f32) -> vec3<f32> {
     // Hue [0..1] to RGB [0..1]
-    // See http://www.chilliant.com/rgb2hsv.html
     let rgb = abs(hue * 6.0 - vec3<f32>(3.0, 2.0, 4.0)) * vec3<f32>(1.0, -1.0, -1.0) + vec3<f32>(-1.0, 2.0, 2.0);
     return clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
 fn RGBtoHCV(rgb: vec3<f32>) -> vec3<f32> {
     // RGB [0..1] to Hue-Chroma-Value [0..1]
-    // Based on work by Sam Hocevar and Emil Persson
-    var p: vec4<f32>;
-    if rgb.y < rgb.z { 
-        p = vec4<f32>(rgb.z, rgb.y, -1.0, 2.0 / 3.0);
-    } else { 
-        p = vec4<f32>(rgb.y, rgb.z, 0.0, -1.0 / 3.0);
-    }
-    var q: vec4<f32>;
-    if rgb.x < p.x { 
-        q = vec4<f32>(p.x, p.y, p.z, rgb.x);
-    } else { 
-        q = vec4<f32>(rgb.x, p.y, p.z, p.x);
-    }
+    var p = select(vec4(rgb.y, rgb.z, 0.0, -1.0 / 3.0), vec4(rgb.z, rgb.y, -1.0, 2.0 / 3.0), rgb.y < rgb.z);
+    var q = select(vec4(rgb.x, p.y, p.z, p.x), vec4(p.x, p.y, p.z, rgb.x), rgb.x < p.x);
     let c = q.x - min(q.w, q.y);
-    let h = abs((q.w - q.y) / (6.0 * c + 0.00001) + q.z); // EPSILON replaced with 0.00001
+    let h = abs((q.w - q.y) / (6.0 * c + EPSILON) + q.z);
     return vec3<f32>(h, c, q.x);
 }
 
@@ -164,8 +156,9 @@ fn vertex(@builtin(vertex_index) vertex_index: u32) -> FullscreenVertexOutput {
 fn render(coord: vec2<f32>) -> vec3<f32> {
     var color = vec3(0.0);
     let pos = state.position.xy;
-    let uv = coord / state.resolution.xy;
-    let screen_mid = state.resolution.xy / 2.0;
+    let frag_size = 1.0 / state.resolution.xy;
+    let uv = coord * frag_size;
+    let screen_mid = state.resolution.xy * 0.5;
     let p = coord - screen_mid - pos * state.scale_factor;
     let fring = length(p) / (state.ring_thick * state.scale_factor) + 1.0;
     let ffring = floor(fring);
@@ -175,7 +168,7 @@ fn render(coord: vec2<f32>) -> vec3<f32> {
         return vec3(1.0, 0.0, 0.0);
     }
 
-    let theta = (atan2(p.y, p.x) + PI * 0.5) / TAU;
+    let theta = (atan2(p.y, p.x) + PI * 0.5) * FRAC_1_TAU;
 
     {
         // Draw rings
@@ -205,9 +198,6 @@ fn render(coord: vec2<f32>) -> vec3<f32> {
                 if ring == state.player_ring + 1 {
                     color = vec3(1.0, 0.3, 0.0);
                 }
-                //else if ring == state.player_ring {
-                //    color = vec3(0.1, 0.1, 0.1);
-                //}
             }
         }
     }
@@ -215,6 +205,15 @@ fn render(coord: vec2<f32>) -> vec3<f32> {
     color = RGBtoHSV(color);
     color.x = fract(color.x + (max(state.t - 10.0, 0.0) * 0.05));
     color = HSVtoRGB(color);
+
+    let dist_from_center = distance(coord.xy, screen_mid);
+    if state.player_dead == 0 && u32(dist_from_center) < u32(state.ring_thick) >> 1 {
+        // Draw player
+        let cooldown_anim = (sin(state.t * 200.0) * 0.7 + 0.5) * 0.6 + 0.1;
+        var player_alpha = select(1.0, cooldown_anim, state.move_cooldown < 1.0);
+        let player_cir = 1.0 - clamp(dist_from_center - state.ring_thick * 0.4, 0.0, 1.0);
+        color = mix(color, vec3(1.0), player_cir * player_alpha);
+    }
 
     return color;
 }
