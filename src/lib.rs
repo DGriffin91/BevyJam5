@@ -54,6 +54,7 @@ pub fn app() {
             Material2dPlugin::<DataMaterial>::default(),
             LogDiagnosticsPlugin::default(),
             FrameTimeDiagnosticsPlugin,
+            bevy_framepace::debug::DiagnosticsPlugin,
             Shape2dPlugin::default(),
             #[cfg(feature = "hot_reload")]
             HotReloadPlugin {
@@ -61,10 +62,22 @@ pub fn app() {
                 bevy_dylib: true,
                 ..default()
             },
+            bevy_framepace::FramepacePlugin,
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, draw)
+        //.add_systems(Update, update_cursor)
         .run();
+}
+
+pub fn update_cursor(windows: Query<&Window>, mut gizmos: Gizmos) {
+    if let Some(pos) = windows.single().cursor_position() {
+        let pos = Vec2::new(
+            pos.x - windows.single().width() / 2.0,
+            windows.single().height() / 2.0 - pos.y,
+        );
+        gizmos.circle_2d(pos, 10.0, bevy::color::palettes::basic::GREEN);
+    }
 }
 
 fn setup(
