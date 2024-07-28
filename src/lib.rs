@@ -12,12 +12,11 @@ use bevy::render::render_resource::{AsBindGroup, ShaderRef, ShaderType};
 use bevy::sprite::{Material2d, Material2dPlugin, MaterialMesh2dBundle};
 use bevy::window::PresentMode;
 use bevy::winit::{UpdateMode, WinitSettings};
-use bevy_asset_loader::asset_collection::AssetCollection;
-use bevy_asset_loader::loading_state::config::ConfigureLoadingState;
-use bevy_asset_loader::loading_state::{LoadingState, LoadingStateAppExt};
-use bevy_kira_audio::prelude::AudioSource;
-use bevy_kira_audio::AudioPlugin;
-use bevy_kira_audio::{Audio, AudioControl};
+use bevy_asset_loader::{
+    asset_collection::AssetCollection,
+    loading_state::{config::ConfigureLoadingState, LoadingState, LoadingStateAppExt},
+};
+use bevy_kira_audio::{prelude::AudioSource, Audio, AudioControl, AudioPlugin};
 pub mod sampling;
 use iyes_progress::{ProgressCounter, ProgressPlugin};
 #[cfg(feature = "hot_reload")]
@@ -266,10 +265,6 @@ fn draw(
         || keyboard_input.just_pressed(KeyCode::Tab)
     {
         state.paused = !state.paused;
-    }
-
-    if keyboard_input.just_pressed(KeyCode::ArrowDown) {
-        state.player_ring = state.player_ring.saturating_sub(1);
     }
 
     let ring_thick = (25.0 - (state.player_ring as f32) * 0.2).max(6.0);
