@@ -54,7 +54,7 @@ pub fn app() {
             Material2dPlugin::<DataMaterial>::default(),
             LogDiagnosticsPlugin::default(),
             FrameTimeDiagnosticsPlugin,
-            //bevy_framepace::debug::DiagnosticsPlugin,
+            //bevy_framepace::debug::DiagnosticsPlugin, // Crashes
             Shape2dPlugin::default(),
             #[cfg(feature = "hot_reload")]
             HotReloadPlugin {
@@ -126,11 +126,8 @@ fn setup(
                     TextSection {
                         value: String::from(""),
                         style: style.clone(),
-                    },
-                    TextSection {
-                        value: String::from(""),
-                        style: style.clone(),
-                    },
+                    };
+                    3
                 ]),
                 GameText,
             ));
@@ -187,20 +184,22 @@ fn draw_fn(
         .extend(window.width())
         .extend(window.height());
     state.scale_factor = window.scale_factor();
-
     state.time += time.delta_seconds();
-    if state.t * 5.0 > (state.player_ring + 1) as f32 {
-        state.t += time.delta_seconds() * game_speed * 0.3;
+    if state.paused == 0 {
+        if state.t * 5.0 > (state.player_ring + 1) as f32 {
+            state.t += time.delta_seconds() * game_speed * 0.3;
 
-        state.player_dead = 1;
-    } else {
-        state.t += time.delta_seconds() * game_speed;
+            state.player_dead = 1;
+        } else {
+            state.t += time.delta_seconds() * game_speed;
+        }
     }
 
-    if state.player_dead != 0 {
+    text.sections[0].value = String::new();
+    text.sections[1].value = String::new();
+    text.sections[2].value = String::new();
+    if state.player_dead != 0 || state.paused != 0 {
         if keyboard_input.just_pressed(KeyCode::Enter) {
-            text.sections[0].value = String::new();
-            text.sections[1].value = String::new();
             *state = Default::default();
             return;
         }
@@ -216,6 +215,15 @@ fn draw_fn(
             1.0,
             ((state.time * 5.0).sin() * 0.5 + 0.5) * 0.85 + 0.15,
         );
+        if state.paused != 0 {
+            text.sections[2].value = format!("\n\nPRESS P OR TAB TO RESUME");
+            text.sections[2].style.color = Color::srgba(
+                1.0,
+                1.0,
+                1.0,
+                ((state.time * 5.0).cos() * 0.5 + 0.5) * 0.85 + 0.15,
+            );
+        }
     }
 
     painter.hollow = true;
@@ -232,6 +240,14 @@ fn draw_fn(
         pressed_up = true;
         //*player_direction *= -1.0;
     }
+
+    if keyboard_input.just_pressed(KeyCode::KeyP)
+        || keyboard_input.just_pressed(KeyCode::Escape)
+        || keyboard_input.just_pressed(KeyCode::Tab)
+    {
+        state.paused = !state.paused;
+    }
+
     if keyboard_input.just_pressed(KeyCode::ArrowDown) {
         state.player_ring = state.player_ring.saturating_sub(1);
     }
@@ -401,7 +417,7 @@ struct GpuState {
     player_dead: u32,
 
     player_miss: u32,
-    spare0: u32,
+    paused: u32,
     spare1: u32,
     spare2: u32,
 }
