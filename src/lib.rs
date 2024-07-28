@@ -18,18 +18,12 @@ use bevy_asset_loader::loading_state::{LoadingState, LoadingStateAppExt};
 use bevy_kira_audio::prelude::AudioSource;
 use bevy_kira_audio::AudioPlugin;
 use bevy_kira_audio::{Audio, AudioControl};
-use bevy_vector_shapes::shapes::DiscPainter;
-use bevy_vector_shapes::Shape2dPlugin;
-use bevy_vector_shapes::{painter::ShapePainter, shapes::Cap};
 pub mod sampling;
 use iyes_progress::{ProgressCounter, ProgressPlugin};
 #[cfg(feature = "hot_reload")]
 use ridiculous_bevy_hot_reloading::{hot_reloading_macros::make_hot, HotReloadPlugin};
 use sampling::hash_noise;
 
-const DRAW_DEBUG_RINGS: bool = false;
-const DRAW_DEBUG_ARC: bool = false;
-const DRAW_DEBUG_PLAYER: bool = false;
 const GAME_SPEED: f32 = 0.08;
 const STARTING_LEVEL: u32 = 10;
 const STEP_ANIM_SPEED: f32 = 16.0;
@@ -86,7 +80,6 @@ pub fn app() {
             FrameTimeDiagnosticsPlugin,
             AudioPlugin,
             //bevy_framepace::debug::DiagnosticsPlugin, // Crashes
-            Shape2dPlugin::default(),
             #[cfg(feature = "hot_reload")]
             HotReloadPlugin {
                 auto_watch: true,
@@ -212,7 +205,6 @@ fn setup(
 #[make_hot]
 fn draw(
     time: Res<Time>,
-    painter: ShapePainter,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     materials: ResMut<Assets<DataMaterial>>,
     window: Query<(Entity, &mut Window)>,
@@ -222,7 +214,6 @@ fn draw(
 ) {
     draw_fn(
         time,
-        painter,
         keyboard_input,
         materials,
         window,
@@ -235,7 +226,6 @@ fn draw(
 #[cfg(not(feature = "hot_reload"))]
 fn draw(
     time: Res<Time>,
-    painter: ShapePainter,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     materials: ResMut<Assets<DataMaterial>>,
     window: Query<(Entity, &mut Window)>,
@@ -245,7 +235,6 @@ fn draw(
 ) {
     draw_fn(
         time,
-        painter,
         keyboard_input,
         materials,
         window,
@@ -257,7 +246,6 @@ fn draw(
 
 fn draw_fn(
     time: Res<Time>,
-    mut painter: ShapePainter,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut materials: ResMut<Assets<DataMaterial>>,
     window: Query<(Entity, &mut Window)>,
@@ -322,20 +310,9 @@ fn draw_fn(
         }
     }
 
-    painter.hollow = true;
-    painter.thickness = 5.0;
-    painter.cap = Cap::None;
-    let mut pressed_up = false;
-    //if *player_direction == 0.0 {
-    //    *player_direction = 1.0;
-    //}
-    if keyboard_input.just_pressed(KeyCode::ArrowUp)
+    let pressed_up = keyboard_input.just_pressed(KeyCode::ArrowUp)
         || keyboard_input.just_pressed(KeyCode::KeyW)
-        || keyboard_input.just_pressed(KeyCode::Space)
-    {
-        pressed_up = true;
-        //*player_direction *= -1.0;
-    }
+        || keyboard_input.just_pressed(KeyCode::Space);
 
     if keyboard_input.just_pressed(KeyCode::KeyP)
         || keyboard_input.just_pressed(KeyCode::Escape)
@@ -346,20 +323,6 @@ fn draw_fn(
 
     if keyboard_input.just_pressed(KeyCode::ArrowDown) {
         state.player_ring = state.player_ring.saturating_sub(1);
-    }
-
-    for (i, k) in [
-        KeyCode::Digit1,
-        KeyCode::Digit2,
-        KeyCode::Digit3,
-        KeyCode::Digit4,
-    ]
-    .iter()
-    .enumerate()
-    {
-        if keyboard_input.just_pressed(*k) {
-            state.player_color_idx = i as u32;
-        };
     }
 
     let ring_thick = (25.0 - (state.player_ring as f32) * 0.2).max(6.0);
@@ -378,37 +341,6 @@ fn draw_fn(
             + step_anim_offset;
 
         state.position = vec4(position.x, -position.y, 0.0, 0.0);
-
-        painter.set_translation(position);
-    }
-
-    if DRAW_DEBUG_RINGS {
-        for i in 0..115u32 + state.player_ring {
-            if i % 2 == 0 {
-                painter.set_color(Color::srgb(0.0, 1.0, 1.0));
-                arc(&mut painter, 0.0, 1.0, i, ring_thick);
-            }
-        }
-    }
-
-    let start = state.player_ring;
-    let mut end = state.player_ring + 2;
-    if DRAW_DEBUG_ARC {
-        end = state.player_ring + 60; // Only eval further out rings if draw debug
-    }
-
-    for ring in start..end {
-        let max_arcs = get_max_arcs(ring);
-        for sub_ring in 0..max_arcs {
-            let ring_speed = get_ring_speed(ring, sub_ring, 0);
-            let arc_size = get_arc_size(ring, sub_ring, 0);
-            let ring_start = (state.t * (ring_speed * (ring + 1) as f32)).rem_euclid(1.0);
-
-            if DRAW_DEBUG_ARC {
-                painter.set_color(Color::srgb(1.0, 0.0, 1.0));
-                arc(&mut painter, ring_start, arc_size, ring, ring_thick);
-            }
-        }
     }
 
     if pressed_up && state.move_cooldown == 1.0 {
@@ -443,23 +375,6 @@ fn draw_fn(
         }
     }
 
-    if DRAW_DEBUG_PLAYER {
-        if state.player_dead == 0 {
-            // Draw player
-            if state.move_cooldown < 1.0 {
-                let v = ((state.t * 200.0).sin() * 0.7 + 0.5) * 0.6 + 0.1;
-                painter.set_color(Color::srgba(1.0, 1.0, 1.0, v));
-            } else {
-                painter.set_color(Color::srgb(1.0, 1.0, 1.0));
-            }
-            let temp = painter.transform;
-            painter.hollow = false;
-            painter.set_translation(Vec3::ZERO);
-            painter.circle((ring_thick * 0.5) * 0.8);
-            painter.set_translation(temp.translation);
-        }
-    }
-
     state.step_anim = (state.step_anim + time.delta_seconds() * STEP_ANIM_SPEED).min(1.0);
 
     state.move_cooldown =
@@ -478,19 +393,6 @@ fn get_ring_speed(ring: u32, level: u32, seed: u32) -> f32 {
     ((hash_noise(ring, level, seed) * 1.0 + 0.8) / ((ring + 1) as f32))
         * (1.0 + ring as f32 * 0.0)
         * if ring % 2 == 0 { -1.0 } else { 1.0 }
-}
-
-fn arc(painter: &mut ShapePainter, start: f32, size: f32, ring: u32, ring_thick: f32) {
-    painter.hollow = true;
-    let debug_thick_scale = 0.5;
-    painter.thickness = ring_thick * debug_thick_scale;
-    painter.cap = Cap::None;
-    let start = start.fract();
-    painter.arc(
-        ring_thick * ((ring + 1) as f32) - ring_thick,
-        TAU * start,
-        TAU * (start + size),
-    );
 }
 
 #[derive(Clone, ShaderType, Default, Debug)]

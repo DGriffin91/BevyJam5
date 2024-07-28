@@ -34,7 +34,6 @@ bevy = { version = "0.14", default-features = false, features = [
     "sysinfo_plugin",
 ] }
 ridiculous_bevy_hot_reloading = { git = "https://github.com/DGriffin91/ridiculous_bevy_hot_reloading", optional = true }
-bevy_vector_shapes = "0.8.0"
 bevy_framepace = "0.17.1"
 bevy_kira_audio = { version = "0.20.0", features = ["flac"] }
 bevy_asset_loader = "0.21.0"
