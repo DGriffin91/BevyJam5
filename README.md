@@ -1,4 +1,4 @@
-# BevyJam5
+# BevyJam5 - SOL
 
 https://dgriffin.itch.io/
 

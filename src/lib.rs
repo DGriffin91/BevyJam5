@@ -1,4 +1,5 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
+#![allow(non_snake_case)] // For game name
 
 use std::f32::consts::*;
 use std::time::Duration;
@@ -61,7 +62,7 @@ pub fn app() {
                 })
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        title: String::from("BevyJam5"),
+                        title: String::from("SOL"),
                         present_mode: PresentMode::AutoVsync,
                         fit_canvas_to_parent: true,
                         ..default()

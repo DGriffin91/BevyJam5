@@ -1,5 +1,5 @@
 [package]
-name = "bevy_jam_5"
+name = "SOL"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0 OR CC0-1.0"
@@ -43,7 +43,7 @@ iyes_progress = "0.12.0"
 
 [lib]
 # This naming scheme with "lib_" prefix is default but can be configured with HotReload::library_name.
-name = "lib_bevy_jam_5"
+name = "lib_SOL"
 path = "src/lib.rs"
 crate-type = ["rlib", "dylib"]
 
