@@ -30,3 +30,8 @@ pub fn pfract(x: f32) -> f32 {
         y
     }
 }
+
+#[inline(always)]
+pub fn gain_from_db(decibels: f32) -> f32 {
+    (10.0f32).powf(decibels * 0.05)
+}

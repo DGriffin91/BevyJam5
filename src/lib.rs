@@ -6,6 +6,7 @@ use bevy::asset::AssetMetaCheck;
 use bevy::core_pipeline::fxaa::{Fxaa, Sensitivity};
 
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
+
 use bevy::math::*;
 use bevy::prelude::*;
 use bevy::render::render_resource::{AsBindGroup, ShaderRef, ShaderType};
@@ -21,7 +22,7 @@ pub mod sampling;
 use iyes_progress::{ProgressCounter, ProgressPlugin};
 #[cfg(feature = "hot_reload")]
 use ridiculous_bevy_hot_reloading::{hot_reloading_macros::make_hot, HotReloadPlugin};
-use sampling::{hash_noise, pfract};
+use sampling::{gain_from_db, hash_noise, pfract};
 
 const GAME_SPEED: f32 = 0.08;
 const STARTING_LEVEL: u32 = 10;
@@ -125,19 +126,15 @@ fn start_music(asset_server: Res<AssetServer>, audio: Res<Audio>) {
     audio
         .play(asset_server.load("audio/theme1.flac"))
         .looped()
-        .with_volume(0.5);
+        .with_volume(gain_from_db(-8.0) as f64);
 }
 
 #[derive(AssetCollection, Resource)]
 pub struct AudioAssets {
-    #[asset(path = "audio/enemyexplode1.flac")]
-    pub enemyexplode1: Handle<AudioSource>,
-    #[asset(path = "audio/enemygun1.flac")]
-    pub enemygun1: Handle<AudioSource>,
-    #[asset(path = "audio/playergun1.flac")]
-    pub playergun1: Handle<AudioSource>,
-    #[asset(path = "audio/playerhit1.flac")]
-    pub playerhit1: Handle<AudioSource>,
+    #[asset(path = "audio/tone.flac")]
+    pub tone: Handle<AudioSource>,
+    #[asset(path = "audio/miss_tone.flac")]
+    pub miss_tone: Handle<AudioSource>,
     #[asset(path = "audio/theme1.flac")]
     pub theme1: Handle<AudioSource>,
 }
@@ -211,18 +208,22 @@ fn draw(
     let (_, gpu) = materials.iter_mut().next().unwrap();
     let (_, mut window) = window.iter_mut().next().unwrap();
     let mut text = text.single_mut();
-    if keyboard_input.just_pressed(KeyCode::F11) {
+    if keyboard_input.just_pressed(KeyCode::F11) || keyboard_input.just_pressed(KeyCode::KeyF) {
         if window.mode != WindowMode::BorderlessFullscreen {
             window.mode = WindowMode::BorderlessFullscreen;
         } else {
             window.mode = WindowMode::Windowed;
         }
     }
+    if keyboard_input.just_pressed(KeyCode::Escape) {
+        window.mode = WindowMode::Windowed;
+    }
 
     let state = &mut gpu.state;
     if state.player_ring == 0 {
         state.player_ring = STARTING_LEVEL;
     }
+    let rel_player_level = state.player_ring as i32 - STARTING_LEVEL as i32;
 
     state.resolution = window
         .physical_size()
@@ -250,29 +251,37 @@ fn draw(
         }
         text.sections[0].value = format!(
             "LEVEL        {:>9}\nMISSED JUMPS {:>9}",
-            state.player_ring as i32 - STARTING_LEVEL as i32,
-            state.player_miss
+            rel_player_level, state.player_miss
         );
         text.sections[1].value = "\n\nPRESS ENTER TO RESTART".to_string();
         text.sections[1].style.color =
             Color::WHITE.with_alpha(((state.time * 5.0).sin() * 0.5 + 0.5) * 0.85 + 0.15);
         if state.paused != 0 {
-            text.sections[2].value = "\n\nPRESS P OR TAB TO RESUME".to_string();
+            text.sections[2].value = "\n\nPRESS UP OR SPACE TO RESUME".to_string();
             text.sections[2].style.color =
                 Color::WHITE.with_alpha(((state.time * 5.0).cos() * 0.5 + 0.5) * 0.85 + 0.15);
         }
     }
 
-    let pressed_up = (keyboard_input.just_pressed(KeyCode::ArrowUp)
+    let mut pressed_up = false;
+    if keyboard_input.just_pressed(KeyCode::ArrowUp)
         || keyboard_input.just_pressed(KeyCode::KeyW)
-        || keyboard_input.just_pressed(KeyCode::Space))
-        && state.paused == 0;
-
-    if keyboard_input.just_pressed(KeyCode::KeyP)
-        || keyboard_input.just_pressed(KeyCode::Escape)
-        || keyboard_input.just_pressed(KeyCode::Tab)
+        || keyboard_input.just_pressed(KeyCode::Space)
     {
-        state.paused = !state.paused;
+        if state.paused == 0 {
+            pressed_up = true;
+        } else {
+            state.paused = 0;
+        }
+    }
+
+    if state.paused == 0 {
+        if keyboard_input.just_pressed(KeyCode::KeyP)
+            || keyboard_input.just_pressed(KeyCode::Escape)
+            || keyboard_input.just_pressed(KeyCode::Tab)
+        {
+            state.paused = u32::MAX;
+        }
     }
 
     let ring_thick = (25.0 - (state.player_ring as f32) * 0.2).max(6.0);
@@ -318,9 +327,59 @@ fn draw(
         if missed_all {
             state.move_cooldown = 0.0;
             state.player_miss += 1;
-            audio.play(audio_assets.playerhit1.clone());
+            audio
+                .play(audio_assets.miss_tone.clone())
+                .with_playback_rate(0.9)
+                .with_volume(0.6);
+            audio
+                .play(audio_assets.miss_tone.clone())
+                .with_playback_rate(0.8)
+                .with_volume(0.6);
         } else {
-            audio.play(audio_assets.playergun1.clone());
+            let intervals = [0, 1, 3, 5, 7, 8, 11, 12];
+            let intervals2 = [0, 1, 3, 5, 7, 8, 12];
+            let intervals3 = [0, 3, 5, 7, 8, 12];
+            let vol = gain_from_db(-8.0) as f64;
+
+            if rel_player_level >= 8 {
+                let interval = intervals2[rel_player_level as usize % intervals2.len()];
+                audio
+                    .play(audio_assets.tone.clone())
+                    .with_playback_rate(1.059463f64.powi(interval) * 0.5)
+                    .with_volume(vol);
+                if rel_player_level >= 100 {
+                    audio
+                        .play(audio_assets.tone.clone())
+                        .with_playback_rate(1.059463f64.powi(interval) * 0.5)
+                        .with_volume(vol * 1.5)
+                        .reverse();
+                }
+                let interval = intervals3[(rel_player_level + 4) as usize % intervals3.len()];
+                audio
+                    .play(audio_assets.tone.clone())
+                    .with_playback_rate(1.059463f64.powi(interval))
+                    .with_volume(vol * 0.6);
+            } else {
+                let interval = intervals[rel_player_level as usize % intervals.len()];
+                audio
+                    .play(audio_assets.tone.clone())
+                    .with_playback_rate(1.059463f64.powi(interval) * 0.5)
+                    .with_volume(vol);
+            }
+            if rel_player_level >= 16 {
+                let interval = intervals2[rel_player_level as usize % intervals2.len()];
+                audio
+                    .play(audio_assets.tone.clone())
+                    .with_playback_rate(1.059463f64.powi(interval) * 0.25)
+                    .with_volume(vol * 0.6);
+            }
+            if rel_player_level >= 24 {
+                let interval = intervals3[(rel_player_level + 6) as usize % intervals3.len()];
+                audio
+                    .play(audio_assets.tone.clone())
+                    .with_playback_rate(1.059463f64.powi(interval) * 2.0)
+                    .with_volume(vol * 0.11);
+            }
         }
     }
 
