@@ -10,7 +10,7 @@ use bevy::math::*;
 use bevy::prelude::*;
 use bevy::render::render_resource::{AsBindGroup, ShaderRef, ShaderType};
 use bevy::sprite::{Material2d, Material2dPlugin, MaterialMesh2dBundle};
-use bevy::window::PresentMode;
+use bevy::window::{PresentMode, WindowMode};
 use bevy::winit::{UpdateMode, WinitSettings};
 use bevy_asset_loader::{
     asset_collection::AssetCollection,
@@ -203,14 +203,21 @@ fn draw(
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut materials: ResMut<Assets<DataMaterial>>,
-    window: Query<(Entity, &mut Window)>,
+    mut window: Query<(Entity, &mut Window)>,
     mut text: Query<&mut Text, With<GameText>>,
     audio: Res<bevy_kira_audio::Audio>,
     audio_assets: Res<AudioAssets>,
 ) {
     let (_, gpu) = materials.iter_mut().next().unwrap();
-    let (_, window) = window.iter().next().unwrap();
+    let (_, mut window) = window.iter_mut().next().unwrap();
     let mut text = text.single_mut();
+    if keyboard_input.just_pressed(KeyCode::F11) {
+        if window.mode != WindowMode::BorderlessFullscreen {
+            window.mode = WindowMode::BorderlessFullscreen;
+        } else {
+            window.mode = WindowMode::Windowed;
+        }
+    }
 
     let state = &mut gpu.state;
     if state.player_ring == 0 {
