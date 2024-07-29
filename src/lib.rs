@@ -1,6 +1,7 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
 use std::f32::consts::*;
+use std::time::Duration;
 
 use bevy::asset::AssetMetaCheck;
 use bevy::core_pipeline::fxaa::{Fxaa, Sensitivity};
@@ -18,6 +19,7 @@ use bevy_asset_loader::{
     loading_state::{config::ConfigureLoadingState, LoadingState, LoadingStateAppExt},
 };
 use bevy_kira_audio::{prelude::AudioSource, Audio, AudioControl, AudioPlugin};
+use bevy_kira_audio::{AudioInstance, AudioTween};
 pub mod sampling;
 use iyes_progress::{ProgressCounter, ProgressPlugin};
 #[cfg(feature = "hot_reload")]
@@ -122,21 +124,32 @@ fn loading_ui(
     }
 }
 
-fn start_music(asset_server: Res<AssetServer>, audio: Res<Audio>) {
-    audio
-        .play(asset_server.load("audio/theme1.flac"))
-        .looped()
-        .with_volume(gain_from_db(-8.0) as f64);
-}
-
 #[derive(AssetCollection, Resource)]
 pub struct AudioAssets {
     #[asset(path = "audio/tone.flac")]
     pub tone: Handle<AudioSource>,
     #[asset(path = "audio/miss_tone.flac")]
     pub miss_tone: Handle<AudioSource>,
+    #[asset(path = "audio/close.flac")]
+    pub close: Handle<AudioSource>,
     #[asset(path = "audio/theme1.flac")]
     pub theme1: Handle<AudioSource>,
+}
+#[derive(Resource)]
+pub struct OrbAudioHandle(pub Handle<AudioInstance>);
+
+fn start_music(mut commands: Commands, asset_server: Res<AssetServer>, audio: Res<Audio>) {
+    audio
+        .play(asset_server.load("audio/theme1.flac"))
+        .looped()
+        .with_volume(gain_from_db(-8.0) as f64);
+    commands.insert_resource(OrbAudioHandle(
+        audio
+            .play(asset_server.load("audio/close.flac"))
+            .looped()
+            .with_volume(0.0)
+            .handle(),
+    ));
 }
 
 #[derive(Component)]
@@ -204,6 +217,9 @@ fn draw(
     mut text: Query<&mut Text, With<GameText>>,
     audio: Res<bevy_kira_audio::Audio>,
     audio_assets: Res<AudioAssets>,
+    close_audio: Option<Res<OrbAudioHandle>>,
+    mut audio_instances: ResMut<Assets<AudioInstance>>,
+    mut audio_muted: Local<bool>,
 ) {
     let (_, gpu) = materials.iter_mut().next().unwrap();
     let (_, mut window) = window.iter_mut().next().unwrap();
@@ -220,6 +236,14 @@ fn draw(
     if keyboard_input.just_pressed(KeyCode::Escape) {
         window.mode = WindowMode::Windowed;
         window.cursor.visible = true;
+    }
+    if keyboard_input.just_pressed(KeyCode::KeyM) {
+        *audio_muted = !*audio_muted;
+        if *audio_muted {
+            audio.pause();
+        } else {
+            audio.resume();
+        }
     }
 
     let state = &mut gpu.state;
@@ -278,13 +302,12 @@ fn draw(
         }
     }
 
-    if state.paused == 0 {
-        if keyboard_input.just_pressed(KeyCode::KeyP)
-            || keyboard_input.just_pressed(KeyCode::Escape)
-            || keyboard_input.just_pressed(KeyCode::Tab)
-        {
-            state.paused = u32::MAX;
-        }
+    if (keyboard_input.just_pressed(KeyCode::KeyP)
+        || keyboard_input.just_pressed(KeyCode::Escape)
+        || keyboard_input.just_pressed(KeyCode::Tab))
+        && state.paused == 0
+    {
+        state.paused = u32::MAX;
     }
 
     let ring_thick = (25.0 - (state.player_ring as f32) * 0.2).max(6.0);
@@ -382,6 +405,19 @@ fn draw(
                     .play(audio_assets.tone.clone())
                     .with_playback_rate(1.059463f64.powi(interval) * 2.0)
                     .with_volume(vol * 0.11);
+            }
+        }
+    }
+
+    if let Some(close_audio) = close_audio {
+        if let Some(close) = audio_instances.get_mut(&close_audio.0) {
+            let v = (state.t * 7.0 - state.player_ring as f32 + 3.0).clamp(0.0, 3.0) / 3.0;
+            close.set_volume(
+                (v * 0.1) as f64,
+                AudioTween::linear(Duration::from_secs_f32(0.1)),
+            );
+            if state.player_dead != 0 {
+                close.set_volume(0.0, AudioTween::linear(Duration::from_secs_f32(0.01)));
             }
         }
     }

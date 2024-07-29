@@ -48,7 +48,7 @@ path = "src/lib.rs"
 crate-type = ["rlib", "dylib"]
 
 [features]
-default = ["hot_reload"]
+#default = ["hot_reload"]
 hot_reload = [
     "ridiculous_bevy_hot_reloading/hot_reload",
     "bevy/file_watcher",
