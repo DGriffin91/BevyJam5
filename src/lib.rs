@@ -211,12 +211,15 @@ fn draw(
     if keyboard_input.just_pressed(KeyCode::F11) || keyboard_input.just_pressed(KeyCode::KeyF) {
         if window.mode != WindowMode::BorderlessFullscreen {
             window.mode = WindowMode::BorderlessFullscreen;
+            window.cursor.visible = false;
         } else {
             window.mode = WindowMode::Windowed;
+            window.cursor.visible = true;
         }
     }
     if keyboard_input.just_pressed(KeyCode::Escape) {
         window.mode = WindowMode::Windowed;
+        window.cursor.visible = true;
     }
 
     let state = &mut gpu.state;
