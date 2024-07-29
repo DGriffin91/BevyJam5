@@ -62,7 +62,7 @@ pub fn app() {
                 })
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        title: String::from("SOL"),
+                        title: String::from("Sol"),
                         present_mode: PresentMode::AutoVsync,
                         fit_canvas_to_parent: true,
                         ..default()
