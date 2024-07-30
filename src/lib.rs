@@ -221,6 +221,7 @@ fn draw(
     close_audio: Option<Res<OrbAudioHandle>>,
     mut audio_instances: ResMut<Assets<AudioInstance>>,
     mut audio_muted: Local<bool>,
+    mut gizmos: Gizmos,
 ) {
     let (_, gpu) = materials.iter_mut().next().unwrap();
     let (_, mut window) = window.iter_mut().next().unwrap();
@@ -328,20 +329,38 @@ fn draw(
         state.position = vec4(position.x, -position.y, 0.0, 0.0);
     }
 
-    if pressed_up && state.move_cooldown == 1.0 {
-        let mut missed_all = true;
-        let max_arcs = get_max_arcs(state.player_ring);
-        for sub_ring in 0..max_arcs {
-            let ring = state.player_ring;
-            let ring_speed = get_ring_speed(ring, state.player_sub_ring, 0);
-            let ring_start = pfract(state.t * (ring_speed * (ring + 1) as f32));
-            let this_p = pfract(ring_start + state.player_offset);
+    let ring = state.player_ring;
+    let ring_speed = get_ring_speed(ring, state.player_sub_ring, 0);
+    let ring_start = pfract(state.t * (ring_speed * (ring + 1) as f32));
+    let this_p = pfract(ring_start + state.player_offset);
 
-            let next_speed = get_ring_speed(ring + 1, sub_ring, 0);
-            let next_size = get_arc_size(ring + 1, sub_ring, 0);
-            let next_p = pfract(state.t * (next_speed * (ring + 2) as f32));
+    let thickness = ring_thick * 0.4;
+    p_line(&mut gizmos, Vec2::ZERO, this_p, thickness, thickness * 10.0);
+    p_line(&mut gizmos, Vec2::ZERO, this_p + 0.25, thickness, thickness);
 
-            let within = pfract(this_p - next_p);
+    let mut missed_all = true;
+    let max_arcs = get_max_arcs(state.player_ring + 1);
+    for sub_ring in 0..max_arcs {
+        let next_speed = get_ring_speed(ring + 1, sub_ring, 0);
+        let next_size = get_arc_size(ring + 1, sub_ring, 0);
+        let next_p = pfract(state.t * (next_speed * (ring + 2) as f32));
+
+        for t in [next_p, next_p + next_size] {
+            let n = vec2((t * TAU).sin(), (t * TAU).cos());
+            let offset = state.position.xy() * vec2(1.0, -1.0);
+            let ring_thick_offset = n * ring_thick * 0.5;
+            let p = n * ring_thick * (ring + 1) as f32;
+            p_line(
+                &mut gizmos,
+                p - ring_thick_offset + offset,
+                t,
+                thickness * 3.0,
+                thickness * 3.0,
+            );
+        }
+
+        let within = pfract(this_p - next_p);
+        if pressed_up && state.move_cooldown == 1.0 {
             if within < next_size {
                 state.player_offset = within;
                 state.player_ring += 1;
@@ -351,6 +370,8 @@ fn draw(
                 break;
             }
         }
+    }
+    if pressed_up && state.move_cooldown == 1.0 {
         if missed_all {
             state.move_cooldown = 0.0;
             state.player_miss += 1;
@@ -440,6 +461,22 @@ fn get_ring_speed(ring: u32, level: u32, seed: u32) -> f32 {
     ((hash_noise(ring, level, seed) * 1.0 + 0.8) / ((ring + 1) as f32))
         * (1.0 + ring as f32 * 0.0)
         * if ring % 2 == 0 { -1.0 } else { 1.0 }
+}
+
+fn p_line(gizmos: &mut Gizmos, pos: Vec2, t: f32, start: f32, end: f32) {
+    let n = vec2((t * TAU).sin(), (t * TAU).cos());
+    outlined(gizmos, -n * start + pos, n * end + pos);
+}
+
+fn outlined(gizmos: &mut Gizmos, a: Vec2, b: Vec2) {
+    for x in -1..=1 {
+        for y in -1..=1 {
+            let v = vec2(x as f32 * 1.5, y as f32 * 1.5);
+            gizmos.line_2d(a + v, b + v, Color::BLACK);
+        }
+    }
+
+    gizmos.line_2d(a, b, Color::WHITE);
 }
 
 #[derive(Clone, ShaderType, Default, Debug)]
