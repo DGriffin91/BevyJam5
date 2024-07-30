@@ -438,15 +438,14 @@ fn draw(
             }
 
             let within = pfract(this_p - next_p);
-            if jump {
-                if within < next_size {
-                    state.player_offset = within;
-                    state.player_ring += 1;
-                    state.step_anim = 0.0;
-                    state.player_sub_ring = sub_ring;
-                    missed_all = false;
-                    break;
-                }
+
+            if jump && within < next_size {
+                state.player_offset = within;
+                state.player_ring += 1;
+                state.step_anim = 0.0;
+                state.player_sub_ring = sub_ring;
+                missed_all = false;
+                break;
             }
         }
     }
