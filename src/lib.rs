@@ -63,7 +63,7 @@ pub fn app() {
                 .set(WindowPlugin {
                     primary_window: Some(Window {
                         title: String::from("Sol"),
-                        present_mode: PresentMode::AutoVsync,
+                        present_mode: PresentMode::AutoNoVsync,
                         fit_canvas_to_parent: true,
                         ..default()
                     }),
@@ -89,7 +89,7 @@ pub fn app() {
                 bevy_dylib: true,
                 ..default()
             },
-            bevy_framepace::FramepacePlugin,
+            //bevy_framepace::FramepacePlugin,
         ))
         .add_systems(Startup, setup)
         .add_systems(OnEnter(GameLoading::Loaded), start_music)
