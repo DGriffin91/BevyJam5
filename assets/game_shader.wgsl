@@ -117,7 +117,7 @@ struct State {
 
     scale_factor: f32,
     ring_thick: f32,
-    frame: f32,
+    frame: u32,
     time: f32,
 
     t: f32,

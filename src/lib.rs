@@ -12,6 +12,7 @@ use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::math::*;
 use bevy::prelude::*;
 use bevy::render::render_resource::{AsBindGroup, ShaderRef, ShaderType};
+
 use bevy::sprite::{Material2d, Material2dPlugin, MaterialMesh2dBundle};
 use bevy::window::{PresentMode, WindowMode};
 use bevy::winit::{UpdateMode, WinitSettings};
@@ -26,6 +27,9 @@ use iyes_progress::{ProgressCounter, ProgressPlugin};
 #[cfg(feature = "hot_reload")]
 use ridiculous_bevy_hot_reloading::{hot_reloading_macros::make_hot, HotReloadPlugin};
 use sampling::{gain_from_db, hash_noise, pfract};
+
+#[cfg(not(target_arch = "wasm32"))]
+use bevy::render::view::screenshot::ScreenshotManager;
 
 const GAME_SPEED: f32 = 0.08;
 const STARTING_LEVEL: u32 = 10;
@@ -44,6 +48,10 @@ enum GameLoading {
     AssetLoading,
     Loaded,
 }
+
+const MAGENTA: Color = Color::linear_rgb(1.0, 0.0, 1.0);
+const RED: Color = Color::linear_rgb(1.0, 0.0, 0.0);
+const GREEN: Color = Color::linear_rgb(0.0, 1.0, 0.0);
 
 pub fn app() {
     App::new()
@@ -155,6 +163,8 @@ fn start_music(mut commands: Commands, asset_server: Res<AssetServer>, audio: Re
 
 #[derive(Component)]
 struct GameText;
+#[derive(Component)]
+struct DebugText;
 
 fn setup(
     mut commands: Commands,
@@ -207,6 +217,22 @@ fn setup(
                 GameText,
             ));
         });
+
+    let debug_style = TextStyle {
+        font_size: 10.0,
+        color: Color::WHITE,
+        ..default()
+    };
+    commands.spawn((
+        TextBundle::from_sections(vec![
+            TextSection {
+                value: String::from(""),
+                style: debug_style.clone(),
+            };
+            3
+        ]),
+        DebugText,
+    ));
 }
 
 #[cfg_attr(feature = "hot_reload", make_hot)]
@@ -215,17 +241,25 @@ fn draw(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut materials: ResMut<Assets<DataMaterial>>,
     mut window: Query<(Entity, &mut Window)>,
-    mut text: Query<&mut Text, With<GameText>>,
+    mut text: (
+        Query<&mut Text, With<GameText>>,
+        Query<&mut Text, (With<DebugText>, Without<GameText>)>,
+    ),
+
     audio: Res<bevy_kira_audio::Audio>,
     audio_assets: Res<AudioAssets>,
     close_audio: Option<Res<OrbAudioHandle>>,
     mut audio_instances: ResMut<Assets<AudioInstance>>,
     mut audio_muted: Local<bool>,
+    mut used_debug: Local<bool>,
+    mut debug_screenshot_on_jump: Local<bool>,
+    mut draw_debug: Local<bool>,
     mut gizmos: Gizmos,
+    #[cfg(not(target_arch = "wasm32"))] mut screenshot_manager: ResMut<ScreenshotManager>,
 ) {
     let (_, gpu) = materials.iter_mut().next().unwrap();
-    let (_, mut window) = window.iter_mut().next().unwrap();
-    let mut text = text.single_mut();
+    let (window_entity, mut window) = window.iter_mut().next().unwrap();
+    let (mut text, mut debug_text) = (text.0.single_mut(), text.1.single_mut());
     if keyboard_input.just_pressed(KeyCode::F11) || keyboard_input.just_pressed(KeyCode::KeyF) {
         if window.mode != WindowMode::BorderlessFullscreen {
             window.mode = WindowMode::BorderlessFullscreen;
@@ -249,6 +283,25 @@ fn draw(
     }
 
     let state = &mut gpu.state;
+    if keyboard_input.just_pressed(KeyCode::F1) || keyboard_input.just_pressed(KeyCode::F2) {
+        *draw_debug = !*draw_debug;
+        *used_debug = true;
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    if keyboard_input.just_pressed(KeyCode::F2) {
+        *debug_screenshot_on_jump = !*debug_screenshot_on_jump;
+    }
+
+    if *used_debug {
+        debug_text.sections[0].value = String::from("DEBUG MODE\n");
+        debug_text.sections[1].value = String::new();
+        debug_text.sections[2].value = String::new();
+    }
+    if *debug_screenshot_on_jump {
+        debug_text.sections[1].value = String::from("DEBUG SCREENSHOT ON JUMP\n");
+    }
+
     if state.player_ring == 0 {
         state.player_ring = STARTING_LEVEL;
     }
@@ -261,6 +314,7 @@ fn draw(
         .extend(window.height());
     state.scale_factor = window.scale_factor();
     state.time += time.delta_seconds();
+    state.frame = state.frame.wrapping_add(1);
     if state.paused == 0 {
         if state.t * 7.0 > (state.player_ring + 1) as f32 {
             state.t += time.delta_seconds() * GAME_SPEED * 0.3;
@@ -282,6 +336,9 @@ fn draw(
             "LEVEL        {:>9}\nMISSED JUMPS {:>9}",
             rel_player_level, state.player_miss
         );
+        if *used_debug {
+            text.sections[0].value.push_str("\nDEBUG MODE")
+        }
         text.sections[1].value = "\n\nPRESS ENTER TO RESTART".to_string();
         text.sections[1].style.color =
             Color::WHITE.with_alpha(((state.time * 5.0).sin() * 0.5 + 0.5) * 0.85 + 0.15);
@@ -293,6 +350,7 @@ fn draw(
     }
 
     let mut pressed_up = false;
+
     if keyboard_input.just_pressed(KeyCode::ArrowUp)
         || keyboard_input.just_pressed(KeyCode::KeyW)
         || keyboard_input.just_pressed(KeyCode::Space)
@@ -310,6 +368,15 @@ fn draw(
         && state.paused == 0
     {
         state.paused = u32::MAX;
+    }
+
+    let jump = pressed_up && state.move_cooldown == 1.0;
+
+    if *debug_screenshot_on_jump || *draw_debug {
+        state.debug_draw = u32::MAX;
+        debug_text.sections[2].value = String::new();
+    } else {
+        state.debug_draw = 0;
     }
 
     let ring_thick = (25.0 - (state.player_ring as f32) * 0.2).max(6.0);
@@ -330,49 +397,69 @@ fn draw(
     }
 
     let ring = state.player_ring;
+    let next_ring = ring + 1;
     let ring_speed = get_ring_speed(ring, state.player_sub_ring, 0);
-    let ring_start = pfract(state.t * (ring_speed * (ring + 1) as f32));
+    let ring_start = pfract(state.t * (ring_speed * next_ring as f32));
     let this_p = pfract(ring_start + state.player_offset);
+    let this_n = vec2((this_p * TAU).sin(), (this_p * TAU).cos());
 
-    let thickness = ring_thick * 0.4;
-    p_line(&mut gizmos, Vec2::ZERO, this_p, thickness, thickness * 10.0);
-    p_line(&mut gizmos, Vec2::ZERO, this_p + 0.25, thickness, thickness);
+    let dbg_thick = ring_thick * 0.4;
+    if state.debug_draw != 0 {
+        p_line(&mut gizmos, Vec2::ZERO, this_p, dbg_thick, dbg_thick * 10.0);
+        p_line(&mut gizmos, Vec2::ZERO, this_p + 0.25, dbg_thick, dbg_thick);
+    }
 
     let mut missed_all = true;
-    let max_arcs = get_max_arcs(state.player_ring + 1);
-    for sub_ring in 0..max_arcs {
-        let next_speed = get_ring_speed(ring + 1, sub_ring, 0);
-        let next_size = get_arc_size(ring + 1, sub_ring, 0);
-        let next_p = pfract(state.t * (next_speed * (ring + 2) as f32));
-
-        for t in [next_p, next_p + next_size] {
-            let n = vec2((t * TAU).sin(), (t * TAU).cos());
-            let offset = state.position.xy() * vec2(1.0, -1.0);
-            let ring_thick_offset = n * ring_thick * 0.5;
-            let p = n * ring_thick * (ring + 1) as f32;
-            p_line(
-                &mut gizmos,
-                p - ring_thick_offset + offset,
-                t,
-                thickness * 3.0,
-                thickness * 3.0,
-            );
+    let max_arcs = get_max_arcs(next_ring);
+    if jump || state.debug_draw != 0 {
+        if state.debug_draw != 0 {
+            debug_text.sections[2].value = format!("player: {:.3}\n", this_p);
         }
+        for sub_ring in 0..max_arcs {
+            let next_speed = get_ring_speed(next_ring, sub_ring, 0);
+            let next_size = get_arc_size(next_ring, sub_ring, 0);
+            let next_p = pfract(state.t * (next_speed * (next_ring + 1) as f32));
 
-        let within = pfract(this_p - next_p);
-        if pressed_up && state.move_cooldown == 1.0 {
-            if within < next_size {
-                state.player_offset = within;
-                state.player_ring += 1;
-                state.step_anim = 0.0;
-                state.player_sub_ring = sub_ring;
-                missed_all = false;
-                break;
+            if state.debug_draw != 0 {
+                for t in [next_p, next_p + next_size] {
+                    let n = vec2((t * TAU).sin(), (t * TAU).cos());
+                    let offset = state.position.xy() * vec2(1.0, -1.0);
+                    let ring_thick_offset = n * ring_thick * 0.5;
+                    let p = n * ring_thick * next_ring as f32;
+                    let ws_p = p - ring_thick_offset + offset;
+                    p_line(&mut gizmos, ws_p, t, dbg_thick * 3.0, dbg_thick * 3.0);
+                }
+                debug_text.sections[2].value.push_str(&format!(
+                    "bar{}: {:.3}..{:.3}\n",
+                    sub_ring,
+                    next_p,
+                    next_p + next_size
+                ))
+            }
+
+            let within = pfract(this_p - next_p);
+            if jump {
+                if within < next_size {
+                    state.player_offset = within;
+                    state.player_ring += 1;
+                    state.step_anim = 0.0;
+                    state.player_sub_ring = sub_ring;
+                    missed_all = false;
+                    break;
+                }
             }
         }
     }
-    if pressed_up && state.move_cooldown == 1.0 {
+    if jump {
+        let endp = this_n * dbg_thick * 10.0;
+        if state.debug_draw != 0 {
+            outlined(&mut gizmos, Vec2::ZERO, endp, MAGENTA)
+        }
         if missed_all {
+            if state.debug_draw != 0 {
+                outlined(&mut gizmos, endp + vec2(6., 6.), endp + vec2(-6., -6.), RED);
+                outlined(&mut gizmos, endp + vec2(-6., 6.), endp + vec2(6., -6.), RED);
+            }
             state.move_cooldown = 0.0;
             state.player_miss += 1;
             audio
@@ -384,6 +471,10 @@ fn draw(
                 .with_playback_rate(0.8)
                 .with_volume(0.6);
         } else {
+            if state.debug_draw != 0 {
+                outlined(&mut gizmos, endp, endp + vec2(8., 8.), GREEN);
+                outlined(&mut gizmos, endp, endp + vec2(-5., 5.), GREEN);
+            }
             let intervals = [0, 1, 3, 5, 7, 8, 11, 12];
             let intervals2 = [0, 1, 3, 5, 7, 8, 12];
             let intervals3 = [0, 3, 5, 7, 8, 12];
@@ -447,6 +538,14 @@ fn draw(
     state.step_anim = (state.step_anim + time.delta_seconds() * STEP_ANIM_SPEED).min(1.0);
     state.move_cooldown =
         (state.move_cooldown + time.delta_seconds() * COOLDOWN_ANIM_SPEED).min(1.0);
+
+    #[cfg(not(target_arch = "wasm32"))]
+    if *debug_screenshot_on_jump && jump && state.debug_draw != 0 {
+        let path = format!("./screenshot_{}_debug.jpg", state.frame);
+        screenshot_manager
+            .save_screenshot_to_disk(window_entity, path)
+            .unwrap();
+    }
 }
 
 fn get_max_arcs(ring: u32) -> u32 {
@@ -465,10 +564,10 @@ fn get_ring_speed(ring: u32, level: u32, seed: u32) -> f32 {
 
 fn p_line(gizmos: &mut Gizmos, pos: Vec2, t: f32, start: f32, end: f32) {
     let n = vec2((t * TAU).sin(), (t * TAU).cos());
-    outlined(gizmos, -n * start + pos, n * end + pos);
+    outlined(gizmos, -n * start + pos, n * end + pos, Color::WHITE);
 }
 
-fn outlined(gizmos: &mut Gizmos, a: Vec2, b: Vec2) {
+fn outlined(gizmos: &mut Gizmos, a: Vec2, b: Vec2, color: Color) {
     for x in -1..=1 {
         for y in -1..=1 {
             let v = vec2(x as f32 * 1.5, y as f32 * 1.5);
@@ -476,7 +575,7 @@ fn outlined(gizmos: &mut Gizmos, a: Vec2, b: Vec2) {
         }
     }
 
-    gizmos.line_2d(a, b, Color::WHITE);
+    gizmos.line_2d(a, b, color);
 }
 
 #[derive(Clone, ShaderType, Default, Debug)]
@@ -486,7 +585,7 @@ struct GpuState {
 
     scale_factor: f32,
     ring_thick: f32,
-    frame: f32,
+    frame: u32,
     time: f32,
 
     t: f32,
@@ -501,7 +600,7 @@ struct GpuState {
 
     player_miss: u32,
     paused: u32,
-    spare1: u32,
+    debug_draw: u32,
     spare2: u32,
 }
 
